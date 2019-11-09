@@ -1,0 +1,19 @@
+{ "compilerOptions":
+  { "module": "commonjs"
+  , "moduleResolution": "node"
+  , "lib": ["es5", "es6", "es2017", "dom"]
+  , "target": "es6"
+  , "noImplicitAny": true
+  , "removeComments": true
+  , "preserveConstEnums": true
+  , "allowUnreachableCode": true
+  , "suppressImplicitAnyIndexErrors": true
+  , "declaration": true
+  , "strictFunctionTypes": false
+  , "allowSyntheticDefaultImports": true
+  , "outDir": "dist"
+  , "sourceMap": true
+  }
+, "include": [ "src/index.ts", "test/*.ts" ]
+, "exclude": [ "node_modules", "**/*.spec.ts" ]
+}

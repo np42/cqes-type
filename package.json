@@ -1,0 +1,21 @@
+{
+  "name": "cqes-type",
+  "version": "1.0.0",
+  "description": "Typescript runtime typing library",
+  "main": "./dist/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/apiculteur/cqes-type.git"
+  },
+  "keywords": [],
+  "author": "Nicolas Pelletier <npelletier@apiculteur.io>",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/apiculteur/cqes/issues"
+  },
+  "homepage": "https://github.com/apiculteur/cqes-type#readme",
+  "dependencies": {
+    "@types/uuid": "^3.4.6",
+    "uuid": "^3.3.3"
+  }
+}
