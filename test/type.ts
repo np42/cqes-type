@@ -1,4 +1,4 @@
-import * as T from '../src/Type';
+import * as T from '..';
 
 class R0 extends T.Record
   .add('foo', T.String.setDefault(42))
