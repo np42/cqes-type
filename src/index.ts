@@ -160,16 +160,19 @@ Value.defineProperty('mayNull', function mayNull() {
 }, true);
 
 Value.defineProperty('addRewriter', function rewrite<T>(rewriter: rewriter<T>) {
+  if (rewriter == null) throw new Error('Require a function');
   return this.clone((type: IValue) => {
     this._rewriters.push(rewriter);
   });
 });
 
 Value.defineProperty('addParser', function addParser<T>(parser: parser<T>) {
+  if (parser == null) throw new Error('Require a function');
   return this.clone((value: IValue) => value._parsers.push(parser));
 });
 
 Value.defineProperty('addConstraint', function addConstraint<T>(constraint: constraint<T>) {
+  if (constraint == null) throw new Error('Require a defined constraint');
   return this.clone((value: IValue) => {
     if (typeof constraint === 'function')
       value._assertions.push(constraint);
@@ -264,20 +267,47 @@ export const String = (<IString>Value.extends('String'))
     if (typeof value !== 'string') throw new TypeError('Require a String');
   });
 
-// Enum
-export interface IEnum extends IValue<Object> {
-  _either: Set<IValue>;
+// Sum
+export interface ISum extends IValue {
+  _cases:        Map<any, IValue>;
+  _defaultCase?: IValue;
 }
 
-export const Enum = (<IEnum>Value.extends('Enum'))
-  .setProperty('_either', new _Set())
-  .setProperty('of', function (...args: any[]) {
-    return this.clone((value: IEnum) => value._either = new _Set(args));
+export const Sum = (<ISum>Value.extends('Sum'))
+  .setProperty('_cases', new _Map())
+  .setProperty('either', function either(hint: any, type: IValue) {
+    if (this._cases.has(hint)) throw new Error('this case already exists');
+    return this.clone((type: ISum) => {
+      if (this._defaultCase == null && typeof hint === 'string')
+        type._defaultCase = type;
+      type._cases.set(hint, type)
+    });
   })
-  .addConstraint(function isIn(value: any) {
-    if (this._either.has(value)) return ;
-    const values = Array.from(this._either).join(', ');
-    throw new Error('Value ' + value + ' must be one of ' + values);
+  .addParser(function parseValue(value: any) {
+    const valueType = typeof value;
+    if (valueType !== 'object') {
+      const type = this._cases.get(value);
+      if (type != null) return type.from(value);
+      switch (valueType) {
+      case 'boolean':
+        if (this._cases.has(Boolean))  return this._cases.get(Boolean).from(value);
+        if (this._cases.has(_Boolean)) return this._cases.get(_Boolean).from(value);
+        break ;
+      case 'number':
+        if (this._cases.has(Number))  return this._cases.get(Number).from(value);
+        if (this._cases.has(_Number)) return this._cases.get(_Number).from(value);
+        break ;
+      case 'string':
+        if (this._cases.has(String))  return this._cases.get(String).from(value);
+        if (this._cases.has(_String)) return this._cases.get(_String).from(value);
+        break ;
+      }
+    } else if ('$' in value && this._cases.has(value.$)) {
+      return this._cases.get(value.$).from(value);
+    } else if (this._defaultCase != null) {
+      return this._defaultCase.from(value);
+    }
+    return null;
   });
 
 // Record
