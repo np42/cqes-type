@@ -271,6 +271,7 @@ export const String = (<IString>Value.extends('String'))
 export interface ISum extends IValue {
   _cases:        Map<any, IValue>;
   _defaultCase?: IValue;
+  either<T>(this: T, hint: any, type: IValue): T;
 }
 
 export const Sum = (<ISum>Value.extends('Sum'))
