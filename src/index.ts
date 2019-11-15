@@ -168,7 +168,7 @@ Value.defineProperty('addRewriter', function rewrite<T>(rewriter: rewriter<T>) {
 
 Value.defineProperty('addParser', function addParser<T>(parser: parser<T>) {
   if (parser == null) throw new Error('Require a function');
-  return this.clone((value: IValue) => value._parsers.push(parser));
+  return this.clone((value: IValue) => value._parsers.unshift(parser));
 });
 
 Value.defineProperty('addConstraint', function addConstraint<T>(constraint: constraint<T>) {
@@ -213,7 +213,7 @@ Value.defineProperty('from', function from(value: any) {
 });
 
 // Boolean
-export interface IBoolean extends IValue<boolean> {
+export interface IBoolean extends IValue<Boolean> {
   _true:  Set<string>;
   _false: Set<string>;
 }
@@ -235,7 +235,7 @@ export const Boolean = (<IBoolean>Value.extends('Boolean'))
   });
 
 // Number
-export interface INumber extends IValue<number> {
+export interface INumber extends IValue<Number> {
   between<T>(this: T, min: number, max: number): T;
 }
 
@@ -255,9 +255,14 @@ export const Number = (<INumber>Value.extends('Number'))
   });
 
 // String
-export interface IString extends IValue<string> {}
+export interface IString extends IValue<String> {
+  notEmpty: this
+}
 
 export const String = (<IString>Value.extends('String'))
+  .setProperty('notEmpty', function notEmpty() {
+    return this.addConstraint((value: string) => _String(value) !== '');
+  }, true)
   .addParser(function parseNative(value: any) {
     switch (typeof value) {
     case 'number': case 'boolean': return _String(value);
@@ -265,50 +270,6 @@ export const String = (<IString>Value.extends('String'))
   })
   .addConstraint(function isString(value: any) {
     if (typeof value !== 'string') throw new TypeError('Require a String');
-  });
-
-// Sum
-export interface ISum extends IValue {
-  _cases:        Map<any, IValue>;
-  _defaultCase?: IValue;
-  either<T>(this: T, hint: any, type: IValue): T;
-}
-
-export const Sum = (<ISum>Value.extends('Sum'))
-  .setProperty('_cases', new _Map())
-  .setProperty('either', function either(hint: any, type: IValue) {
-    if (this._cases.has(hint)) throw new Error('this case already exists');
-    return this.clone((type: ISum) => {
-      if (this._defaultCase == null && typeof hint === 'string')
-        type._defaultCase = type;
-      type._cases.set(hint, type)
-    });
-  })
-  .addParser(function parseValue(value: any) {
-    const valueType = typeof value;
-    if (valueType !== 'object') {
-      const type = this._cases.get(value);
-      if (type != null) return type.from(value);
-      switch (valueType) {
-      case 'boolean':
-        if (this._cases.has(Boolean))  return this._cases.get(Boolean).from(value);
-        if (this._cases.has(_Boolean)) return this._cases.get(_Boolean).from(value);
-        break ;
-      case 'number':
-        if (this._cases.has(Number))  return this._cases.get(Number).from(value);
-        if (this._cases.has(_Number)) return this._cases.get(_Number).from(value);
-        break ;
-      case 'string':
-        if (this._cases.has(String))  return this._cases.get(String).from(value);
-        if (this._cases.has(_String)) return this._cases.get(_String).from(value);
-        break ;
-      }
-    } else if ('$' in value && this._cases.has(value.$)) {
-      return this._cases.get(value.$).from(value);
-    } else if (this._defaultCase != null) {
-      return this._defaultCase.from(value);
-    }
-    return null;
   });
 
 // Record
@@ -378,6 +339,50 @@ export const Record = (<IRecord>Value.extends('Record'))
     if (typeof data != 'object') throw new TypeError('Require an object');
   });
 
+// Sum
+export interface ISum extends IValue {
+  _cases:        Map<any, IValue>;
+  _defaultCase?: IValue;
+  either<T>(this: T, hint: any, type: any): T;
+}
+
+export const Sum = (<ISum>Value.extends('Sum'))
+  .setProperty('_cases', new _Map())
+  .setProperty('either', function either(hint: any, type: IValue) {
+    if (this._cases.has(hint)) throw new Error('this case already exists');
+    return this.clone((type: ISum) => {
+      if (this._defaultCase == null && typeof hint === 'string')
+        type._defaultCase = type;
+      type._cases.set(hint, type)
+    });
+  })
+  .addParser(function parseValue(value: any) {
+    const valueType = typeof value;
+    if (valueType !== 'object') {
+      const type = this._cases.get(value);
+      if (type != null) return type.from(value);
+      switch (valueType) {
+      case 'boolean':
+        if (this._cases.has(Boolean))  return this._cases.get(Boolean).from(value);
+        if (this._cases.has(_Boolean)) return this._cases.get(_Boolean).from(value);
+        break ;
+      case 'number':
+        if (this._cases.has(Number))  return this._cases.get(Number).from(value);
+        if (this._cases.has(_Number)) return this._cases.get(_Number).from(value);
+        break ;
+      case 'string':
+        if (this._cases.has(String))  return this._cases.get(String).from(value);
+        if (this._cases.has(_String)) return this._cases.get(_String).from(value);
+        break ;
+      }
+    } else if ('$' in value && this._cases.has(value.$)) {
+      return this._cases.get(value.$).from(value);
+    } else if (this._defaultCase != null) {
+      return this._defaultCase.from(value);
+    }
+    return null;
+  });
+
 // Collection
 export interface ICollection<A> extends IValue<A> {
   _subtype: IValue;
@@ -425,7 +430,8 @@ export const Set = (<ISet>Collection.extends('Set'))
   });
 
 // Array
-export interface IArray extends ICollection<Array<any>> {}
+export interface IArray extends ICollection<Array<any>> {
+}
 
 export const Array = (<IArray>Collection.extends('Array'))
   .setProperty('_default', function () {
@@ -519,8 +525,14 @@ export const UUID = (<IUUID>String.extends('UUID'))
 // Email
 export interface IEmail extends IString {}
 
-export const _Email = (<IEmail>String.extends('Email'))
+export const Email = (<IEmail>String.extends('Email'))
   .addConstraint(/^[^\s@]+@([^\s@.,]+\.)+[^\s@.,]{2,}$/);
+
+// URL
+export interface IURL extends IString {}
+
+export const URL = (<IURL>String.extends('URL'))
+  .addConstraint(/^(?:http(s)?:\/\/)?[\w.-]+(?:\.[\w\.-]+)+[\w\-\._~:\/?#[\]@!\$&'\(\)\*\+,;=.]+$/)
 
 // Date
 export interface IDate extends IString {
