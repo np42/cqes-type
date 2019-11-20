@@ -56,6 +56,7 @@ export interface IValue<A = any> {
   _rewriters:   Array<any>;
   _parsers:     Array<any>;
   _assertions:  Array<any>;
+  _cache:       Map<string, IValue<A>>;
 
   defineProperty(name: string, value: any, isGetter?: boolean): void;
 
@@ -82,7 +83,11 @@ Value.defineProperty = function defineProperty(name: string, value: any, isGette
       _Object.defineProperty(this, indirection, { value, enumerable: true, writable: true });
       if (!(name in this)) {
         _Object.defineProperty(this, name, { get: function () {
-          return this[indirection]();
+          const cached = this._cache.get(name);
+          if (cached != null) return cached;
+          const value = this[indirection]();
+          this._cache.set(name, value);
+          return value;
         }, enumerable: true });
       }
     } else {
@@ -96,6 +101,7 @@ Value.defineProperty = function defineProperty(name: string, value: any, isGette
 Value.defineProperty('_rewriters',  new _Array());
 Value.defineProperty('_parsers',    new _Array());
 Value.defineProperty('_assertions', new _Array());
+Value.defineProperty('_cache',      new _Map());
 
 Value.defineProperty('extends', function extend(name: string) {
   const value = makeConstructor(name);
@@ -107,17 +113,22 @@ Value.defineProperty('extends', function extend(name: string) {
   }
   if (parent == null) throw new Error('Must be a CQES/Type');
   for (let key in parent) {
-    const property = _Object.getOwnPropertyDescriptor(parent, key);
-    if (property == null) continue ;
-    if ('value' in property) {
-      switch (_Object.prototype.toString.call(property.value)) {
-      case '[object Array]': { value[key] = _Array.from(parent[key]); } break ;
-      case '[object Set]':   { value[key] = new _Set(parent[key]); } break ;
-      case '[object Map]':   { value[key] = new _Map(parent[key]); } break ;
-      default: { _Object.defineProperty(value, key, property); } break ;
+    switch (key) {
+    case '_cache': { value._cache = new _Map(); } break ;
+    default: {
+      const property = _Object.getOwnPropertyDescriptor(parent, key);
+      if (property == null) continue ;
+      if ('value' in property) {
+        switch (_Object.prototype.toString.call(property.value)) {
+        case '[object Array]': { value[key] = _Array.from(parent[key]); } break ;
+        case '[object Set]':   { value[key] = new _Set(parent[key]); } break ;
+        case '[object Map]':   { value[key] = new _Map(parent[key]); } break ;
+        default: { _Object.defineProperty(value, key, property); } break ;
+        }
+      } else {
+        _Object.defineProperty(value, key, property);
       }
-    } else {
-      _Object.defineProperty(value, key, property);
+    } break ;
     }
   }
   return value;
@@ -201,11 +212,17 @@ Value.defineProperty('from', function from(value: any) {
     else throw new TypeError('Mandatory value is missing');
     if (value === null) return null;
   }
-  for (let i = 0; i < this._parsers.length; i += 1) {
-    const result = this._parsers[i].call(this, value);
-    if (result == null) continue ;
-    value = result;
-    break ;
+  try {
+    for (let i = 0; i < this._parsers.length; i += 1) {
+      const result = this._parsers[i].call(this, value);
+      if (result == null) continue ;
+      value = result;
+      break ;
+    }
+  } catch (e) {
+    if (this._default == null) throw e;
+    console.warn(e);
+    value = this._default();
   }
   for (let i = 0; i < this._assertions.length; i += 1)
     this._assertions[i].call(this, value);
