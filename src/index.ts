@@ -256,7 +256,9 @@ export const Boolean = (<IBoolean>Value.extends('Boolean'))
 // Number
 export interface INumber extends IValue<Number> {
   between<T>(this: T, min: number, max: number): T;
-  natural: this;
+  positive: this;
+  integer:  this;
+  natural:  this;
 }
 
 export const Number = (<INumber>Value.extends('Number'))
@@ -265,12 +267,20 @@ export const Number = (<INumber>Value.extends('Number'))
       return value >= min && value <= max;
     });
   })
-  .setProperty('natural', function natural() {
-    return this.addConstraint(function isPositiveInteger(value: number) {
-      return value >= 0 && isFinite(value) && value === Math.floor(value);
+  .setProperty('positive', function positive() {
+    return this.addConstraint(function isPositive(value: number) {
+      return value >= 0;
+    });
+  }, true)
+  .setProperty('integer', function integer() {
+    return this.addConstraint(function isInteger(value: number) {
+      return isFinite(value) && value === Math.floor(value);
     }).addParser(function (input: any) {
       return Math.floor(input);
     });
+  }, true)
+  .setProperty('natural', function natural() {
+    return this.positive.integer;
   }, true)
   .addParser(function parseNumber(value: string) {
     if (typeof value !== 'string') return ;
