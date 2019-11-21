@@ -219,13 +219,15 @@ Value.defineProperty('from', function from(value: any) {
       value = result;
       break ;
     }
+    for (let i = 0; i < this._assertions.length; i += 1)
+      if (this._assertions[i].call(this, value) === false)
+        throw new Error(this._assertions[i].name + ' not satisfied');
   } catch (e) {
     if (this._default == null) throw e;
-    console.warn(e);
+    const message = e.toString().split('\n').pop().substr(7);
+    console.warn(message + ': returned default value');
     value = this._default();
   }
-  for (let i = 0; i < this._assertions.length; i += 1)
-    this._assertions[i].call(this, value);
   return value;
 });
 
@@ -254,6 +256,7 @@ export const Boolean = (<IBoolean>Value.extends('Boolean'))
 // Number
 export interface INumber extends IValue<Number> {
   between<T>(this: T, min: number, max: number): T;
+  natural: this;
 }
 
 export const Number = (<INumber>Value.extends('Number'))
@@ -262,6 +265,13 @@ export const Number = (<INumber>Value.extends('Number'))
       return value >= min && value <= max;
     });
   })
+  .setProperty('natural', function natural() {
+    return this.addConstraint(function isPositiveInteger(value: number) {
+      return value >= 0 && isFinite(value) && value === Math.floor(value);
+    }).addParser(function (input: any) {
+      return Math.floor(input);
+    });
+  }, true)
   .addParser(function parseNumber(value: string) {
     if (typeof value !== 'string') return ;
     return parseFloat(value);
