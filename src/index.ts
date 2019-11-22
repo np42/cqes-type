@@ -309,6 +309,63 @@ export const String = (<IString>Value.extends('String'))
     if (typeof value !== 'string') throw new TypeError('Require a String');
   });
 
+export interface IEnum extends IValue<String> {
+  _tests:     Array<(arg: any) => string>;
+  _sensitive: boolean;
+  _notrim:    boolean;
+  strict:     this;
+  when<T>(this: T, value: any, ...tests: Array<any>): T;
+}
+
+export const Enum = (<IEnum>Value.extends('Enum'))
+  .setProperty('_sensitive', false)
+  .setProperty('_notrim', false)
+  .setProperty('strict', function sensitive() {
+    return this.clone((type: IEnum) => {
+      type._sensitive = true;
+      type._notrim = true;
+    });
+  }, true)
+  .setProperty('when', function addCase(value: any, ...tests: Array<any>) {
+    return this.clone((type: IEnum) => {
+      for (const test of tests) {
+        switch (typeof test) {
+        case 'number': {
+          const strTest = _String(test);
+          this._tests.push([value, (input: string) => input === strTest]);
+        } break ;
+        case 'string': {
+          const strTest = type._sensitive ? test : test.toLowerCase();
+          this._tests.push([value, (input: string) => input === strTest]);
+        } break ;
+        case 'function': {
+          this._tests.push([value, test]);
+        } break ;
+        default : {
+          if (test instanceof RegExp) {
+            this._tests.push([value, (input: string) => test.test(input)]);
+          } else {
+            this._tests.push([value, (input: string) => input === test]);
+          }
+        } break ;
+        }
+      }
+    })
+  })
+  .addParser(function parseValue(value: any) {
+    switch (typeof value) {
+    case 'number':
+      value = _String(value);
+    case 'string':
+      if (!this._sensitive) value = value.toLowerCase();
+      if (!this._notrim) value = value.trim();
+    }
+    for (const test of this._tests)
+      if (test[1](value))
+        return test[0];
+    return null;
+  });
+
 // Record
 export interface IRecord extends IValue<Object> {
   _fields: Map<string, IValue>;
