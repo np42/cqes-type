@@ -314,7 +314,7 @@ export interface IEnum extends IValue<String> {
   _sensitive: boolean;
   _notrim:    boolean;
   strict:     this;
-  when<T>(this: T, value: any, ...tests: Array<any>): T;
+  as<T>(this: T, value: any, ...tests: Array<any>): T;
 }
 
 export const Enum = (<IEnum>Value.extends('Enum'))
@@ -326,8 +326,9 @@ export const Enum = (<IEnum>Value.extends('Enum'))
       type._notrim = true;
     });
   }, true)
-  .setProperty('when', function addCase(value: any, ...tests: Array<any>) {
+  .setProperty('as', function addCase(value: any, ...tests: Array<any>) {
     return this.clone((type: IEnum) => {
+      if (tests.length === 0) tests.push(value);
       for (const test of tests) {
         switch (typeof test) {
         case 'number': {
