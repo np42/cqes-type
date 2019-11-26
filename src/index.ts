@@ -256,6 +256,8 @@ export const Boolean = (<IBoolean>Value.extends('Boolean'))
 // Number
 export interface INumber extends IValue<Number> {
   between<T>(this: T, min: number, max: number): T;
+  greater<T>(this: T, limit: number): T;
+  lesser<T>(this: T, limit: number): T;
   positive: this;
   integer:  this;
   natural:  this;
@@ -265,6 +267,16 @@ export const Number = (<INumber>Value.extends('Number'))
   .setProperty('between', function between(min: number, max: number) {
     return this.addConstraint(function isBetween(value: number) {
       return value >= min && value <= max;
+    });
+  })
+  .setProperty('lesser', function lesser(limit: number) {
+    return this.addConstraint(function lesserThan(value: number) {
+      return value < limit;
+    });
+  })
+  .setProperty('greater', function greater(limit: number) {
+    return this.addConstraint(function greaterThan(value: number) {
+      return value > limit;
     });
   })
   .setProperty('positive', function positive() {
@@ -318,6 +330,7 @@ export interface IEnum extends IValue<String> {
 }
 
 export const Enum = (<IEnum>Value.extends('Enum'))
+  .setProperty('_tests', [])
   .setProperty('_sensitive', false)
   .setProperty('_notrim', false)
   .setProperty('strict', function sensitive() {
@@ -364,6 +377,7 @@ export const Enum = (<IEnum>Value.extends('Enum'))
     for (const test of this._tests)
       if (test[1](value))
         return test[0];
+    if (value) return value;
     return null;
   });
 
