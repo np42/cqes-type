@@ -17,8 +17,13 @@ export type Typer     = { from(data: any): Typed };
 export type Typed     = any;
 
 export class TypeError extends Error {
-  constructor(message: string) {
-    super(message);
+  static sep = '\n       ';
+  constructor(message: string, parentError?: Error) {
+    if (parentError) {
+      super(message + TypeError.sep + _String(parentError).substr(7));
+    } else {
+      super(message);
+    }
   }
 }
 
@@ -136,7 +141,7 @@ Value.defineProperty('extends', function extend(name: string) {
 
 Value.defineProperty('clone', function clone(modifier?: (a: any) => any) {
   const value = this.extends(this.name);
-  if (modifier) modifier(value);
+  if (modifier) modifier.call(null, value);
   return value;
 });
 
@@ -173,7 +178,7 @@ Value.defineProperty('mayNull', function mayNull() {
 Value.defineProperty('addRewriter', function rewrite<T>(rewriter: rewriter<T>) {
   if (rewriter == null) throw new Error('Require a function');
   return this.clone((type: IValue) => {
-    this._rewriters.push(rewriter);
+    type._rewriters.push(rewriter);
   });
 });
 
@@ -321,8 +326,9 @@ export const String = (<IString>Value.extends('String'))
     if (typeof value !== 'string') throw new TypeError('Require a String');
   });
 
+// Enum
 export interface IEnum extends IValue<String> {
-  _tests:     Array<(arg: any) => string>;
+  _tests:     Array<[any, (val: any) => boolean]>;
   _sensitive: boolean;
   _notrim:    boolean;
   strict:     this;
@@ -346,20 +352,20 @@ export const Enum = (<IEnum>Value.extends('Enum'))
         switch (typeof test) {
         case 'number': {
           const strTest = _String(test);
-          this._tests.push([value, (input: string) => input === strTest]);
+          type._tests.push([value, input => input === strTest]);
         } break ;
         case 'string': {
           const strTest = type._sensitive ? test : test.toLowerCase();
-          this._tests.push([value, (input: string) => input === strTest]);
+          type._tests.push([value, input => input === strTest]);
         } break ;
         case 'function': {
-          this._tests.push([value, test]);
+          type._tests.push([value, test]);
         } break ;
         default : {
           if (test instanceof RegExp) {
-            this._tests.push([value, (input: string) => test.test(input)]);
+            type._tests.push([value, input => test.test(input)]);
           } else {
-            this._tests.push([value, (input: string) => input === test]);
+            type._tests.push([value, input => input === test]);
           }
         } break ;
         }
@@ -436,10 +442,12 @@ export const Record = (<IRecord>Value.extends('Record'))
   .addParser(function parseRecord(data: any) {
     const result = new this();
     for (const [name, type] of this._fields) {
-      try { result[name] = type.from(data[name]); }
-      catch (e) {
+      try {
+        const value = type.from(data[name]);
+        if (value != null) result[name] = value;
+      } catch (e) {
         const strval = JSON.stringify(data[name]);
-        throw new TypeError('Failed on field: ' + name + ' = ' + strval + '\n' + _String(e));
+        throw new TypeError('Failed on field: ' + name + ' = ' + strval, e);
       }
     }
     return result;
@@ -457,12 +465,12 @@ export interface ISum extends IValue {
 
 export const Sum = (<ISum>Value.extends('Sum'))
   .setProperty('_cases', new _Map())
-  .setProperty('either', function either(hint: any, type: IValue) {
+  .setProperty('either', function either(hint: any, casetype: IValue) {
     if (this._cases.has(hint)) throw new Error('this case already exists');
     return this.clone((type: ISum) => {
-      if (this._defaultCase == null && typeof hint === 'string')
-        type._defaultCase = type;
-      type._cases.set(hint, type)
+      if (type._defaultCase == null && typeof hint === 'string')
+        type._defaultCase = casetype;
+      type._cases.set(hint, casetype)
     });
   })
   .addParser(function parseValue(value: any) {
@@ -561,7 +569,7 @@ export const Array = (<IArray>Collection.extends('Array'))
       try { array[i] = this._subtype.from(data[i]); }
       catch (e) {
         const strval = JSON.stringify(data[i]);
-        throw new TypeError('Failed on index: ' + i + ' = ' + strval + '\n' + _String(e));
+        throw new TypeError('Failed on index: ' + i + ' = ' + strval, e);
       }
     }
   })
@@ -604,7 +612,7 @@ export const Map = (<IMap>Collection.extends('Map'))
       catch (e) {
         const strkey = JSON.stringify(key);
         const strval = JSON.stringify(value);
-        throw new TypeError('Failed on ' + strkey + ' = ' + strval + '\n' + _String(e));
+        throw new TypeError('Failed on ' + strkey + ' = ' + strval, e);
       }
     }
     _Object.defineProperty(map, 'toJSON', { value: this.toJSON });
