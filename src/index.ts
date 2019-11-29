@@ -69,6 +69,7 @@ export interface IValue<A = any> {
   clone<T>(this: T, fn: (type: T) => void):                              T;
   of<T>(this: T, ...a: any[]):                                           T;
   setProperty<T>(this: T, name: string, value: any, isGetter?: boolean): T;
+  addRewriter<T>(this: T, rewriter: rewriter<T>):                        T;
   addConstraint<T>(this: T, fn: constraint<T>):                          T;
   addParser<T>(this: T, fn: parser<T>):                                  T;
   setDefault<T>(this: T, fn: any):                                       T;
