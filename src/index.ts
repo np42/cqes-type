@@ -244,8 +244,8 @@ export interface IBoolean extends IValue<Boolean> {
 }
 
 export const Boolean = (<IBoolean>Value.extends('Boolean'))
-  .setProperty('_true', new _Set(['1', 'y', 'yes', 'true']))
-  .setProperty('_false', new _Set(['', '0', 'n', 'no', 'false']))
+  .setProperty('_true', new _Set(['1', 'y', 'yes', 'true', 'on']))
+  .setProperty('_false', new _Set(['', '0', 'n', 'no', 'false', 'off']))
   .addParser(function (value: string) {
     if (typeof value !== 'string') return ;
     if (this._true.has(value.toLowerCase())) return true;
@@ -442,6 +442,7 @@ export const Record = (<IRecord>Value.extends('Record'))
   })
   .addParser(function parseRecord(data: any) {
     const result = new this();
+    if ('$' in data) result['$'] = data.$;
     for (const [name, type] of this._fields) {
       try {
         const value = type.from(data[name]);
