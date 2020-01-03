@@ -62,9 +62,11 @@ export interface IValue<A = any> {
   _parsers:     Array<any>;
   _assertions:  Array<any>;
   _cache:       Map<string, IValue<A>>;
+  _debug:       boolean;
 
   defineProperty(name: string, value: any, isGetter?: boolean): void;
 
+  debug<T>(this: T):                                                     T;
   extends<T>(this: T, name: string):                                     T;
   clone<T>(this: T, fn: (type: T) => void):                              T;
   of<T>(this: T, ...a: any[]):                                           T;
@@ -104,10 +106,18 @@ Value.defineProperty = function defineProperty(name: string, value: any, isGette
   }
 };
 
+Value.defineProperty('_debug',      false);
 Value.defineProperty('_rewriters',  new _Array());
 Value.defineProperty('_parsers',    new _Array());
 Value.defineProperty('_assertions', new _Array());
 Value.defineProperty('_cache',      new _Map());
+
+Value.defineProperty('debug', function debug() {
+  debugger;
+  return this.clone((type: IValue) => {
+    type._debug = true;
+  });
+});
 
 Value.defineProperty('extends', function extend(name: string) {
   const value = makeConstructor(name);
@@ -210,6 +220,7 @@ Value.defineProperty('addConstraint', function addConstraint<T>(constraint: cons
 });
 
 Value.defineProperty('from', function from(value: any) {
+  if (this._debug) debugger;
   for (let i = 0; i < this._rewriters.length; i += 1) {
     value = this._rewriters[i].call(this, value);
   }
@@ -231,7 +242,7 @@ Value.defineProperty('from', function from(value: any) {
   } catch (e) {
     if (this._default == null) throw e;
     const message = e.toString().split('\n').pop().substr(7);
-    console.warn(message + ': returned default value');
+    //console.warn(message + ': returned default value');
     value = this._default();
   }
   return value;
@@ -390,7 +401,8 @@ export const Enum = (<IEnum>Value.extends('Enum'))
 
 // Record
 export interface IRecord extends IValue<Object> {
-  _fields: Map<string, IValue>;
+  _fields:  Map<string, IValue>;
+  mayEmpty: this;
 
   add<T>(this: T, field: string, type: any):                               T;
   rewrite<T>(this: T, field: string, predicate: predicate<T>, value: any): T;
@@ -428,10 +440,9 @@ export const Record = (<IRecord>Value.extends('Record'))
     });
   })
   .setProperty('add', function add(field: string, type: any) {
-    const record = this.clone();
-    type = Value.of(type);
-    record._fields.set(field, type);
-    return record;
+    return this.clone((record: IRecord) => {
+      record._fields.set(field, Value.of(type));
+    });
   })
   .setProperty('rewrite', function rewrite(field: string, predicate: any, value: any) {
     return this.addRewriter((record: any) => {
@@ -440,6 +451,9 @@ export const Record = (<IRecord>Value.extends('Record'))
       return record;
     });
   })
+  .setProperty('mayEmpty', function mayEmpty() {
+    return this.setDefault(() => ({}));
+  }, true)
   .addParser(function parseRecord(data: any) {
     const result = new this();
     if ('$' in data) result['$'] = data.$;
@@ -462,6 +476,7 @@ export const Record = (<IRecord>Value.extends('Record'))
 export interface ISum extends IValue {
   _cases:        Map<any, IValue>;
   _defaultCase?: IValue;
+  mayEmpty:      this;
   either<T>(this: T, hint: any, type: any): T;
 }
 
@@ -475,6 +490,9 @@ export const Sum = (<ISum>Value.extends('Sum'))
       type._cases.set(hint, casetype)
     });
   })
+  .setProperty('mayEmpty', function mayEmpty() {
+    return this.setDefault(() => ({}));
+  }, true)
   .addParser(function parseValue(value: any) {
     const valueType = typeof value;
     if (valueType !== 'object') {
@@ -717,28 +735,6 @@ export const DateTime = (<IDateTime>Value.extends('DateTime'))
 //---------------------------
 
 /*
-// Price
-// cf: https://www.easymarkets.com/eu/learn-centre/discover-trading/currency-acronyms-and-abbreviations/
-export interface IPrice extends IRecord {}
-
-export const _Price = <IPrice>Record.extends(function Price() {})
-  .add('amount', _Number)
-  .add('currency', Enum.of( 'EUR', 'JPY', 'CHF', 'USD', 'AFN', 'ALL', 'DZD', 'AOA', 'ARS', 'AMD', 'AWG'
-                          , 'AUD', 'AZN', 'BSD', 'BHD', 'BDT', 'BBD', 'BYR', 'BZD', 'BMD', 'BTN', 'BOB'
-                          , 'BAM', 'BWP', 'BRL', 'GBP', 'BND', 'BGN', 'BIF', 'XOF', 'XAF', 'XPF', 'KHR'
-                          , 'CAD', 'CVE', 'KYD', 'CLP', 'CNY', 'COP', 'KMF', 'CDF', 'CRC', 'HRK', 'CUC'
-                          , 'CUP', 'CZK', 'DKK', 'DJF', 'DOP', 'XCD', 'EGP', 'SVC', 'ETB', 'FKP', 'FJD'
-                          , 'GMD', 'GEL', 'GHS', 'GIP', 'GTQ', 'GNF', 'GYD', 'HTG', 'HNL', 'HKD', 'HUF'
-                          , 'ISK', 'INR', 'IDR', 'IRR', 'IQD', 'ILS', 'JMD', 'JPY', 'JOD', 'KZT', 'KES'
-                          , 'KWD', 'KGS', 'LAK', 'LBP', 'LSL', 'LRD', 'LYD', 'MOP', 'MKD', 'MGA', 'MWK'
-                          , 'MYR', 'MVR', 'MRO', 'MUR', 'MXN', 'MDL', 'MNT', 'MAD', 'MZN', 'MMK', 'ANG'
-                          , 'NAD', 'NPR', 'NZD', 'NIO', 'NGN', 'KPW', 'NOK', 'OMR', 'PKR', 'PAB', 'PGK'
-                          , 'PYG', 'PEN', 'PHP', 'PLN', 'QAR', 'RON', 'RUB', 'RWF', 'WST', 'STD', 'SAR'
-                          , 'RSD', 'SCR', 'SLL', 'SGD', 'SBD', 'SOS', 'ZAR', 'KRW', 'RO)', 'LKR', 'SHP'
-                          , 'SDG', 'SRD', 'SZL', 'SEK', 'CHF', 'SYP', 'TWD', 'TZS', 'THB', 'TOP', 'TTD'
-                          , 'TND', 'TRY', 'TMM', 'USD', 'UGX', 'UAH', 'UYU', 'AED', 'VUV', 'VEB', 'VND'
-                          , 'YER', 'ZMK', 'ZWD' ));
-
 // GPSPoint
 export interface IGPSPoint extends IRecord {}
 
