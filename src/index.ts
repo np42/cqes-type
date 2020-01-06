@@ -485,13 +485,11 @@ export const Sum = (<ISum>Value.extends('Sum'))
   .setProperty('either', function either(hint: any, casetype: IValue) {
     if (this._cases.has(hint)) throw new Error('this case already exists');
     return this.clone((type: ISum) => {
-      if (type._defaultCase == null && typeof hint === 'string')
-        type._defaultCase = casetype;
       type._cases.set(hint, casetype)
     });
   })
   .setProperty('mayEmpty', function mayEmpty() {
-    return this.setDefault(() => ({}));
+    return this.setDefault(() => new class Undefined {});
   }, true)
   .addParser(function parseValue(value: any) {
     const valueType = typeof value;
