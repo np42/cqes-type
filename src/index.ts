@@ -32,6 +32,7 @@ export type predicate<T>  = (this: T, a: any) => boolean;
 export type assertion<T>  = (this: T, a: any) => void;
 export type constraint<T> = RegExp | predicate<T> | assertion<T>;
 export type parser<T>     = (this: T, a: any) => any | void;
+export type warn          = (error: Error) => void;
 
 const makeConstructor = (name: string) => {
   if (!/^[a-z$_][a-z0-9$_]*$/i.test(name)) throw new Error('Bad name');
@@ -77,7 +78,7 @@ export interface IValue<A = any> {
   setDefault<T>(this: T, fn: any):                                       T;
   mayNull:                                                               this;
 
-  from<X>(this: new (input?: any) => X, data: any): X;
+  from<X>(this: new (input?: any) => X, data: any, warn?: warn): X;
 }
 
 export const Value = <IValue>function Value() {};
@@ -219,11 +220,10 @@ Value.defineProperty('addConstraint', function addConstraint<T>(constraint: cons
   });
 });
 
-Value.defineProperty('from', function from(value: any) {
+Value.defineProperty('from', function from(value: any, warn?: warn) {
   if (this._debug) debugger;
-  for (let i = 0; i < this._rewriters.length; i += 1) {
+  for (let i = 0; i < this._rewriters.length; i += 1)
     value = this._rewriters[i].call(this, value);
-  }
   if (value == null) {
     if (this._default != null) value = this._default();
     else throw new TypeError('Mandatory value is missing');
@@ -231,7 +231,7 @@ Value.defineProperty('from', function from(value: any) {
   }
   try {
     for (let i = 0; i < this._parsers.length; i += 1) {
-      const result = this._parsers[i].call(this, value);
+      const result = this._parsers[i].call(this, value, warn);
       if (result == null) continue ;
       value = result;
       break ;
@@ -241,8 +241,8 @@ Value.defineProperty('from', function from(value: any) {
         throw new Error(this._assertions[i].name + ' not satisfied');
   } catch (e) {
     if (this._default == null) throw e;
+    else if (warn != null) warn(e);
     const message = e.toString().split('\n').pop().substr(7);
-    //console.warn(message + ': returned default value');
     value = this._default();
   }
   return value;
@@ -454,12 +454,12 @@ export const Record = (<IRecord>Value.extends('Record'))
   .setProperty('mayEmpty', function mayEmpty() {
     return this.setDefault(() => ({}));
   }, true)
-  .addParser(function parseRecord(data: any) {
+  .addParser(function parseRecord(data: any, warn?: warn) {
     const result = new this();
     if ('$' in data) result['$'] = data.$;
     for (const [name, type] of this._fields) {
       try {
-        const value = type.from(data[name]);
+        const value = type.from(data[name], warn);
         if (value != null) result[name] = value;
       } catch (e) {
         const strval = JSON.stringify(data[name]);
@@ -491,29 +491,29 @@ export const Sum = (<ISum>Value.extends('Sum'))
   .setProperty('mayEmpty', function mayEmpty() {
     return this.setDefault(() => new class Undefined {});
   }, true)
-  .addParser(function parseValue(value: any) {
+  .addParser(function parseValue(value: any, warn?: warn) {
     const valueType = typeof value;
     if (valueType !== 'object') {
       const type = this._cases.get(value);
-      if (type != null) return type.from(value);
+      if (type != null) return type.from(value, warn);
       switch (valueType) {
       case 'boolean':
-        if (this._cases.has(Boolean))  return this._cases.get(Boolean).from(value);
-        if (this._cases.has(_Boolean)) return this._cases.get(_Boolean).from(value);
+        if (this._cases.has(Boolean))  return this._cases.get(Boolean).from(value, warn);
+        if (this._cases.has(_Boolean)) return this._cases.get(_Boolean).from(value, warn);
         break ;
       case 'number':
-        if (this._cases.has(Number))  return this._cases.get(Number).from(value);
-        if (this._cases.has(_Number)) return this._cases.get(_Number).from(value);
+        if (this._cases.has(Number))  return this._cases.get(Number).from(value, warn);
+        if (this._cases.has(_Number)) return this._cases.get(_Number).from(value, warn);
         break ;
       case 'string':
-        if (this._cases.has(String))  return this._cases.get(String).from(value);
-        if (this._cases.has(_String)) return this._cases.get(_String).from(value);
+        if (this._cases.has(String))  return this._cases.get(String).from(value, warn);
+        if (this._cases.has(_String)) return this._cases.get(_String).from(value, warn);
         break ;
       }
     } else if ('$' in value && this._cases.has(value.$)) {
-      return this._cases.get(value.$).from(value);
+      return this._cases.get(value.$).from(value, warn);
     } else if (this._defaultCase != null) {
-      return this._defaultCase.from(value);
+      return this._defaultCase.from(value, warn);
     }
     return null;
   });
@@ -552,11 +552,11 @@ export const Set = (<ISet>Collection.extends('Set'))
       return value.size > 0;
     });
   }, true)
-  .addParser(function parseArray(data: any) {
+  .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array || data instanceof _Set)) return ;
     const set = new _Set();
     for (const value of data)
-      set.add(this._subtype.from(value));
+      set.add(this._subtype.from(value, warn));
     _Object.defineProperty(set, 'toJSON', { value: this.toJSON });
     return set;
   })
@@ -580,16 +580,17 @@ export const Array = (<IArray>Collection.extends('Array'))
       return value.length > 0;
     });
   }, true)
-  .addParser(function parseArray(data: any) {
+  .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array)) return ;
     const array = new _Array();
     for (let i = 0; i < data.length; i += 1) {
-      try { array[i] = this._subtype.from(data[i]); }
+      try { array[i] = this._subtype.from(data[i], warn); }
       catch (e) {
         const strval = JSON.stringify(data[i]);
         throw new TypeError('Failed on index: ' + i + ' = ' + strval, e);
       }
     }
+    return array;
   })
   .addConstraint(function isArray(data: any) {
     if (!(data instanceof _Array)) throw new TypeError('Require an Array');
@@ -622,11 +623,11 @@ export const Map = (<IMap>Collection.extends('Map'))
       value._subtype = Value.of(type);
     });
   })
-  .addParser(function parseArray(data: any) {
+  .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array || data instanceof _Map)) return ;
     const map = new _Map();
     for (const [key, value] of data) {
-      try { map.set(this._index.from(key), this._subtype.from(value)); }
+      try { map.set(this._index.from(key, warn), this._subtype.from(value, warn)); }
       catch (e) {
         const strkey = JSON.stringify(key);
         const strval = JSON.stringify(value);
