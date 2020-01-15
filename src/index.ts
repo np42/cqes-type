@@ -404,8 +404,9 @@ export interface IRecord extends IValue<Object> {
   _fields:  Map<string, IValue>;
   mayEmpty: this;
 
-  add<T>(this: T, field: string, type: any):                               T;
-  rewrite<T>(this: T, field: string, predicate: predicate<T>, value: any): T;
+  add<T>(this: T, field: string, type: any):                                    T;
+  rewrite<T>(this: T, field: string, predicate: predicate<T>, value: any):      T;
+  autoFlow<T>(this: T, pattern: string | Function, handler: string | Function): T;
 }
 
 export const Record = (<IRecord>Value.extends('Record'))
@@ -451,6 +452,17 @@ export const Record = (<IRecord>Value.extends('Record'))
       return record;
     });
   })
+  .setProperty('autoFlow', function autoFlow(pattern: string | Function, handler: string | Function) {
+    if (typeof pattern !== 'function') {
+      const key = pattern;
+      pattern = (value: any) => Object.prototype.toString.call(value) === '[object ' + key + ']';
+    }
+    if (typeof handler !== 'function') {
+      const key = handler;
+      handler = (input: any) => ({ [key]: input });
+    }
+    return this.addRewriter((input: any) => pattern(input) ? handler(input) : input);
+  });
   .setProperty('mayEmpty', function mayEmpty() {
     return this.setDefault(() => ({}));
   }, true)
