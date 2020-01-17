@@ -68,6 +68,7 @@ export interface IValue<A = any> {
   defineProperty(name: string, value: any, isGetter?: boolean): void;
 
   debug<T>(this: T):                                                     T;
+  get<T, X extends IValue = IValue>(this: T):                            X;
   extends<T>(this: T, name: string):                                     T;
   clone<T>(this: T, fn: (type: T) => void):                              T;
   of<T>(this: T, ...a: any[]):                                           T;
@@ -118,6 +119,10 @@ Value.defineProperty('debug', function debug() {
   return this.clone((type: IValue) => {
     type._debug = true;
   });
+});
+
+Value.defineProperty('get', function get() {
+  return this;
 });
 
 Value.defineProperty('extends', function extend(name: string) {
@@ -222,6 +227,7 @@ Value.defineProperty('addConstraint', function addConstraint<T>(constraint: cons
 
 Value.defineProperty('from', function from(value: any, warn?: warn) {
   if (this._debug) debugger;
+  if (value instanceof this) return value;
   for (let i = 0; i < this._rewriters.length; i += 1)
     value = this._rewriters[i].call(this, value);
   if (value == null) {
@@ -404,9 +410,10 @@ export interface IRecord extends IValue<Object> {
   _fields:  Map<string, IValue>;
   mayEmpty: this;
 
+  get<T, X extends IValue>(this: T, field?: string):                            X;
   add<T>(this: T, field: string, type: any):                                    T;
   rewrite<T>(this: T, field: string, predicate: predicate<T>, value: any):      T;
-  autoFlow<T>(this: T, pattern: string | Function, handler: string | Function): T;
+  fixIf<T>(this: T, pattern: string | Function, handler: string | rewriter<T>): T;
 }
 
 export const Record = (<IRecord>Value.extends('Record'))
@@ -440,6 +447,12 @@ export const Record = (<IRecord>Value.extends('Record'))
       return false;
     });
   })
+  .setProperty('get', function get(field?: string) {
+    if (typeof field != 'string') return this;
+    const offset = field.indexOf('.');
+    if (offset == -1) return this._fields.get(field);
+    else return this._fields.get(field.substring(0, offset)).get(field.substring(offset + 1));
+  })
   .setProperty('add', function add(field: string, type: any) {
     return this.clone((record: IRecord) => {
       record._fields.set(field, Value.of(type));
@@ -452,23 +465,26 @@ export const Record = (<IRecord>Value.extends('Record'))
       return record;
     });
   })
-  .setProperty('autoFlow', function autoFlow(pattern: string | Function, handler: string | Function) {
+  .setProperty('fixIf', function fixIf<T>(pattern: string | Function, handler: string | rewriter<T>) {
     if (typeof pattern !== 'function') {
       const key = pattern;
-      pattern = (value: any) => Object.prototype.toString.call(value) === '[object ' + key + ']';
+      pattern = (value: any) =>
+        ( Object.prototype.toString.call(value) === '[object ' + key + ']'
+       || (value && value.$ === key)
+        );
     }
     if (typeof handler !== 'function') {
       const key = handler;
       handler = (input: any) => ({ [key]: input });
     }
-    return this.addRewriter((input: any) => pattern(input) ? handler(input) : input);
-  });
+    return this.addRewriter((input: any) => (<Function>pattern)(input) ? (<Function>handler)(input) : input);
+  })
   .setProperty('mayEmpty', function mayEmpty() {
     return this.setDefault(() => ({}));
   }, true)
   .addParser(function parseRecord(data: any, warn?: warn) {
     const result = new this();
-    if ('$' in data) result['$'] = data.$;
+    if ('$' in data) Object.defineProperty(result, '$', { value: data.$ });
     for (const [name, type] of this._fields) {
       try {
         const value = type.from(data[name], warn);
@@ -534,10 +550,26 @@ export const Sum = (<ISum>Value.extends('Sum'))
 export interface ICollection<A> extends IValue<A> {
   _subtype: IValue;
   notEmpty: this;
+
+  get<T, X extends IValue>(this: T, field?: string): X;
 }
 
 export const Collection = (<ICollection<any>>Value.extends('Collection'))
   .setProperty('_subtype', null)
+  .setProperty('get', function get(field?: string) {
+    if (!field) return this;
+    const offset = field.indexOf('.');
+    if (offset == -1) {
+      switch (field) {
+      case 'value': return this._subtype;
+      default :     return null;
+      }
+    } else {
+      const key = field.substring(0, offset);
+      if (key === 'value') return this._subtype.get(field.substring(offset + 1));
+      return null;
+    }
+  })
   .setProperty('notEmpty', function notEmpty() {
     throw new Error('Not implemented');
   }, true);
@@ -612,6 +644,8 @@ export const Array = (<IArray>Collection.extends('Array'))
 export interface IMap extends ICollection<Map<any, any>> {
   _index: IValue;
   toJSON: (this: Map<any, any>) => any;
+
+  get<T, X extends IValue>(this: T, field?: string):  X;
 }
 
 export const Map = (<IMap>Collection.extends('Map'))
@@ -634,6 +668,24 @@ export const Map = (<IMap>Collection.extends('Map'))
       value._index = Value.of(index);
       value._subtype = Value.of(type);
     });
+  })
+  .setProperty('get', function get(field?: string) {
+    if (!field) return this;
+    const offset = field.indexOf('.');
+    if (offset == -1) {
+      switch (field) {
+      case 'key':   return this._index;
+      case 'value': return this._subtype;
+      default :     return null;
+      }
+    } else {
+      const key = field.substring(0, offset);
+      switch (field) {
+      case 'key':   return this._index.get(field.substring(offset + 1));
+      case 'value': return this._subtype.get(field.substring(offset + 1));
+      default :     return null;
+      }
+    }
   })
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array || data instanceof _Map)) return ;
