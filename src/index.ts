@@ -150,9 +150,9 @@ Value.defineProperty('extends', function extend(name: string) {
       if (property == null) continue ;
       if ('value' in property) {
         switch (_Object.prototype.toString.call(property.value)) {
-        case '[object Array]': { value[key] = _Array.from(parent[key]); } break ;
-        case '[object Set]':   { value[key] = new _Set(parent[key]); } break ;
-        case '[object Map]':   { value[key] = new _Map(parent[key]); } break ;
+        case '[object Array]': { value[key] = _Array.from(property.value); } break ;
+        case '[object Set]':   { value[key] = new _Set(property.value); } break ;
+        case '[object Map]':   { value[key] = new _Map(property.value); } break ;
         default: { _Object.defineProperty(value, key, property); } break ;
         }
       } else {
@@ -354,7 +354,8 @@ export const String = (<IString>Value.extends('String'))
 
 // Enum
 export interface IEnum extends IValue<String> {
-  _tests:     Array<[any, (val: any) => boolean]>;
+  _iterTests: Array<[(val: any) => boolean, any]>;
+  _strTests:  { [key: string]: any };
   _sensitive: boolean;
   _notrim:    boolean;
   strict:     this;
@@ -362,7 +363,8 @@ export interface IEnum extends IValue<String> {
 }
 
 export const Enum = (<IEnum>Value.extends('Enum'))
-  .setProperty('_tests', [])
+  .setProperty('_iterTests', [])
+  .setProperty('_strTests',  {})
   .setProperty('_sensitive', false)
   .setProperty('_notrim', false)
   .setProperty('strict', function sensitive() {
@@ -371,45 +373,37 @@ export const Enum = (<IEnum>Value.extends('Enum'))
       type._notrim = true;
     });
   }, true)
-  .setProperty('as', function addCase(value: any, ...tests: Array<any>) {
+  .setProperty('as', function addCase(...tests: Array<any>) {
+    const value = tests[0];
     return this.clone((type: IEnum) => {
-      if (tests.length === 0) tests.push(value);
       for (const test of tests) {
         switch (typeof test) {
-        case 'number': {
-          const strTest = _String(test);
-          type._tests.push([value, input => input === strTest]);
-        } break ;
-        case 'string': {
-          const strTest = type._sensitive ? test : test.toLowerCase();
-          type._tests.push([value, input => input === strTest]);
-        } break ;
-        case 'function': {
-          type._tests.push([value, test]);
-        } break ;
+        case 'number': { type._strTests[_String(test)] = value; } break ;
+        case 'string': { type._strTests[type._sensitive ? test : test.toLowerCase()] = value; } break ;
+        case 'function': { type._iterTests.push([test, value]); } break ;
         default : {
-          if (test instanceof RegExp) {
-            type._tests.push([value, input => test.test(input)]);
-          } else {
-            type._tests.push([value, input => input === test]);
-          }
+          if (test instanceof RegExp) type._iterTests.push([input => test.test(input), value]);
+          else type._iterTests.push([input => input === test, value]);
         } break ;
         }
       }
     })
   })
-  .addParser(function parseValue(value: any) {
-    switch (typeof value) {
+  .addParser(function parseValue(input: any) {
+    let search = input;
+    switch (typeof input) {
     case 'number':
-      value = _String(value);
+      search = _String(search);
     case 'string':
-      if (!this._sensitive) value = value.toLowerCase();
-      if (!this._notrim) value = value.trim();
+      if (!this._sensitive) search = search.toLowerCase();
+      if (!this._notrim) search = search.trim();
     }
-    for (const test of this._tests)
-      if (test[1](value))
-        return test[0];
-    if (value) return value;
+    for (const [match, value] of this._iterTests)
+      if (match(search))
+        return value;
+    if (this._strTests[input] != null)
+      return this._strTests[input];
+    if (search) return input;
     return null;
   });
 
