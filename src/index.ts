@@ -45,6 +45,11 @@ const makeConstructor = (name: string) => {
   );
 }
 
+const fnHasNativeProps = _Object.getOwnPropertyNames(function () {}).reduce((result, key) => {
+  result[key] = true;
+  return result;
+}, {});
+
 const tagCQESType = (Type: any) => {
   _Object.defineProperty(Type, _tag, { value: true, enumerable: false, writable: false });
 }
@@ -68,7 +73,7 @@ export interface IValue<A = any> {
   defineProperty(name: string, value: any, isGetter?: boolean): void;
 
   debug<T>(this: T):                                                     T;
-  get<T, X extends IValue = IValue>(this: T):                            X;
+  get<X = this>():                                                       X;
   extends<T>(this: T, name: string):                                     T;
   clone<T>(this: T, fn: (type: T) => void):                              T;
   of<T>(this: T, ...a: any[]):                                           T;
@@ -134,11 +139,14 @@ Value.defineProperty('extends', function extend(name: string) {
     parent = _Object.getPrototypeOf(parent);
   }
   if (parent == null) throw new Error('Must be a CQES/Type');
-  for (let key in parent) {
+  const props = [].concat(_Object.getOwnPropertyNames(this), _Object.getOwnPropertyNames(parent));
+  for (let key of props) {
+    if (fnHasNativeProps[key]) continue ;
     switch (key) {
     case '_cache': { value._cache = new _Map(); } break ;
     default: {
-      const property = _Object.getOwnPropertyDescriptor(parent, key);
+      const property = _Object.getOwnPropertyDescriptor(parent, key)
+                    || _Object.getOwnPropertyDescriptor(this, key);
       if (property == null) continue ;
       if ('value' in property) {
         switch (_Object.prototype.toString.call(property.value)) {
@@ -410,7 +418,7 @@ export interface IRecord extends IValue<Object> {
   _fields:  Map<string, IValue>;
   mayEmpty: this;
 
-  get<T, X extends IValue>(this: T, field?: string):                            X;
+  get<X>(field?: string):                                                       X;
   add<T>(this: T, field: string, type: any):                                    T;
   rewrite<T>(this: T, field: string, predicate: predicate<T>, value: any):      T;
   fixIf<T>(this: T, pattern: string | Function, handler: string | rewriter<T>): T;
@@ -428,27 +436,8 @@ export const Record = (<IRecord>Value.extends('Record'))
     }
     return record;
   })
-  .setProperty('either', function either(...args: Array<Array<string> | string>) {
-    return this.addConstraint((data: Object) => {
-      either: for (let i = 0; i < args.length; i += 1) {
-        const arg = args[i];
-        if (typeof arg === 'string') {
-          if (data[arg] != null)
-            return true;
-        } else if (arg instanceof _Array) {
-          for (let ii = 0; ii < arg.length; ii += 1)
-            if (data[arg[ii]] == null)
-              continue either;
-          return true;
-        } else {
-          // Skip silently
-        }
-      }
-      return false;
-    });
-  })
   .setProperty('get', function get(field?: string) {
-    if (typeof field != 'string') return this;
+    if (!field) return this;
     const offset = field.indexOf('.');
     if (offset == -1) return this._fields.get(field);
     else return this._fields.get(field.substring(0, offset)).get(field.substring(offset + 1));
@@ -502,15 +491,16 @@ export const Record = (<IRecord>Value.extends('Record'))
 
 // Sum
 export interface ISum extends IValue {
-  _cases:        Map<any, IValue>;
+  _cases:        Map<string, IValue>;
   _defaultCase?: IValue;
   mayEmpty:      this;
-  either<T>(this: T, hint: any, type: any): T;
+  get<X>(field?: string):                      X;
+  either<T>(this: T, hint: string, type: any): T;
 }
 
 export const Sum = (<ISum>Value.extends('Sum'))
   .setProperty('_cases', new _Map())
-  .setProperty('either', function either(hint: any, casetype: IValue) {
+  .setProperty('either', function either(hint: string, casetype: IValue) {
     if (this._cases.has(hint)) throw new Error('this case already exists');
     return this.clone((type: ISum) => {
       type._cases.set(hint, casetype)
@@ -519,26 +509,14 @@ export const Sum = (<ISum>Value.extends('Sum'))
   .setProperty('mayEmpty', function mayEmpty() {
     return this.setDefault(() => new class Undefined {});
   }, true)
+  .setProperty('get', function get(field: string) {
+    if (!field) return this;
+    const offset = field.indexOf('.');
+    if (offset == -1) return this._cases.get(field);
+    else return this._cases.get(field.substring(0, offset)).get(field.substring(offset + 1));
+  })
   .addParser(function parseValue(value: any, warn?: warn) {
-    const valueType = typeof value;
-    if (valueType !== 'object') {
-      const type = this._cases.get(value);
-      if (type != null) return type.from(value, warn);
-      switch (valueType) {
-      case 'boolean':
-        if (this._cases.has(Boolean))  return this._cases.get(Boolean).from(value, warn);
-        if (this._cases.has(_Boolean)) return this._cases.get(_Boolean).from(value, warn);
-        break ;
-      case 'number':
-        if (this._cases.has(Number))  return this._cases.get(Number).from(value, warn);
-        if (this._cases.has(_Number)) return this._cases.get(_Number).from(value, warn);
-        break ;
-      case 'string':
-        if (this._cases.has(String))  return this._cases.get(String).from(value, warn);
-        if (this._cases.has(_String)) return this._cases.get(_String).from(value, warn);
-        break ;
-      }
-    } else if ('$' in value && this._cases.has(value.$)) {
+    if (typeof value === 'object' && this._cases.has(value.$)) {
       return this._cases.get(value.$).from(value, warn);
     } else if (this._defaultCase != null) {
       return this._defaultCase.from(value, warn);
@@ -551,7 +529,7 @@ export interface ICollection<A> extends IValue<A> {
   _subtype: IValue;
   notEmpty: this;
 
-  get<T, X extends IValue>(this: T, field?: string): X;
+  get<X>(field?: string): X;
 }
 
 export const Collection = (<ICollection<any>>Value.extends('Collection'))
@@ -645,7 +623,7 @@ export interface IMap extends ICollection<Map<any, any>> {
   _index: IValue;
   toJSON: (this: Map<any, any>) => any;
 
-  get<T, X extends IValue>(this: T, field?: string):  X;
+  get<X>(field?: string): X;
 }
 
 export const Map = (<IMap>Collection.extends('Map'))
