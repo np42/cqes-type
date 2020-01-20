@@ -33,6 +33,7 @@ export type assertion<T>  = (this: T, a: any) => void;
 export type constraint<T> = RegExp | predicate<T> | assertion<T>;
 export type parser<T>     = (this: T, a: any) => any | void;
 export type warn          = (error: Error) => void;
+export type filler        = (input: any) => any;
 
 const makeConstructor = (name: string) => {
   if (!/^[a-z$_][a-z0-9$_]*$/i.test(name)) throw new Error('Bad name');
@@ -409,7 +410,7 @@ export const Enum = (<IEnum>Value.extends('Enum'))
 
 // Record
 export interface IRecord extends IValue<Object> {
-  _fields:  Map<string, IValue>;
+  _fields:  Map<string, { type: IValue, postfill?: filler }>;
   mayEmpty: this;
 
   get<X>(field?: string):                                                       X;
@@ -424,9 +425,9 @@ export const Record = (<IRecord>Value.extends('Record'))
     const record = this.clone();
     for (const field in model) {
       if (model[field] instanceof _Array)
-        record._fields.set(field, Value.of(...model[field]));
+        record._fields.set(field, { type: Value.of(...model[field]) });
       else
-        record._fields.set(field, Value.of(model[field]));
+        record._fields.set(field, { type: Value.of(model[field]) });
     }
     return record;
   })
@@ -438,7 +439,7 @@ export const Record = (<IRecord>Value.extends('Record'))
   })
   .setProperty('add', function add(field: string, type: any) {
     return this.clone((record: IRecord) => {
-      record._fields.set(field, Value.of(type));
+      record._fields.set(field, { type: Value.of(type) });
     });
   })
   .setProperty('rewrite', function rewrite(field: string, predicate: any, value: any) {
@@ -462,18 +463,41 @@ export const Record = (<IRecord>Value.extends('Record'))
     }
     return this.addRewriter((input: any) => (<Function>pattern)(input) ? (<Function>handler)(input) : input);
   })
+  .setProperty('postfill', function postfill(field: string, filler: filler) {
+    return this.clone((record: IRecord) => {
+      const child = this._fields.get(field);
+      if (child == null) throw new Error('Require field: ' + field + ' to be already defined');
+      this._fields.set(field, { ...child, postfill: filler });
+    });
+  })
   .setProperty('mayEmpty', function mayEmpty() {
     return this.setDefault(() => ({}));
   }, true)
   .addParser(function parseRecord(data: any, warn?: warn) {
     const result = new this();
     if ('$' in data) Object.defineProperty(result, '$', { value: data.$ });
-    for (const [name, type] of this._fields) {
+    const fillers = <{ [name: string]: { type: IValue, postfill?: filler } }>{};
+    for (const [name, child] of this._fields) {
+      const type = child.type;
       try {
         const value = type.from(data[name], warn);
         if (value != null) result[name] = value;
+        else if (child.postfill != null) fillers[name] = child;
       } catch (e) {
+        if (child.postfill != null) continue ;
         const strval = JSON.stringify(data[name]);
+        throw new TypeError('Failed on field: ' + name + ' = ' + strval, e);
+      }
+    }
+    for (const name in fillers) {
+      const { type, postfill } = fillers[name];
+      let value = null;
+      try {
+        value = postfill(result);
+        value = type.from(value, warn);
+        if (value != null) result[name] = value;
+      } catch (e) {
+        const strval = JSON.stringify(value);
         throw new TypeError('Failed on field: ' + name + ' = ' + strval, e);
       }
     }
