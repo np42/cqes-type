@@ -93,7 +93,7 @@ export interface IValue<A = any> {
 
   from<X>(this: new (input?: any) => X, data: any, warn?: warn): X;
 
-  compare(from: any, to: any, comparator?: comparator): number;
+  compare(from: any, to: any): number;
 }
 
 export const Value = <IValue>function Value() {};
@@ -609,7 +609,7 @@ export const Collection = (<ICollection<any>>Value.extends('Collection'))
 // Set
 export interface ISet extends ICollection<Set<any>> {
   has(source: Set<any>, value: any): boolean;
-  compare(from: Set<any>, to: Set<any>, comparator?: comparator): number;
+  compare(from: Set<any>, to: Set<any>): number;
   toJSON:  (this: Set<any>) => any;
 }
 
@@ -668,7 +668,7 @@ export const Set = (<ISet>Collection.extends('Set'))
 
 // Array
 export interface IArray extends ICollection<Array<any>> {
-  compare(from: Array<any>, to: Array<any>, comparator?: comparator): number;
+  compare(from: Array<any>, to: Array<any>): number;
 }
 
 export const Array = (<IArray>Collection.extends('Array'))
@@ -715,7 +715,7 @@ export interface IMap extends ICollection<Map<any, any>> {
   toJSON: (this: Map<any, any>) => any;
 
   type<X>(field?: string): X;
-  compare(from: Map<any, any>, to: Map<any, any>, comparator?: comparator): number;
+  compare(from: Map<any, any>, to: Map<any, any>): number;
 }
 
 export const Map = (<IMap>Collection.extends('Map'))
