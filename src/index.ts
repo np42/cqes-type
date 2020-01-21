@@ -3,15 +3,16 @@ import { isConstructor } from 'cqes-util';
 import { inspect }       from 'util';
 
 const _tag      = Symbol('cqes-type');
-const _Boolean  = global.Boolean;
-const _Number   = global.Number;
-const _String   = global.String;
-const _Function = global.Function;
-const _Object   = global.Object;
-const _Date     = global.Date;
-const _Set      = global.Set;
-const _Array    = global.Array;
-const _Map      = global.Map;
+
+export const _Boolean  = global.Boolean;
+export const _Number   = global.Number;
+export const _String   = global.String;
+export const _Function = global.Function;
+export const _Object   = global.Object;
+export const _Date     = global.Date;
+export const _Set      = global.Set;
+export const _Array    = global.Array;
+export const _Map      = global.Map;
 
 export type Typer     = { from(data: any): Typed };
 export type Typed     = any;
@@ -31,9 +32,10 @@ export type rewriter<T>   = (this: T, a: any) => any;
 export type predicate<T>  = (this: T, a: any) => boolean;
 export type assertion<T>  = (this: T, a: any) => void;
 export type constraint<T> = RegExp | predicate<T> | assertion<T>;
-export type parser<T>     = (this: T, a: any) => any | void;
-export type warn          = (error: Error) => void;
-export type filler        = (input: any) => any;
+export type parser<T>     = (this: T, a: any)       => any | void;
+export type warn          = (error: Error)          => void;
+export type filler        = (input: any)            => any;
+export type comparator    = (left: any, right: any) => number;
 
 const makeConstructor = (name: string) => {
   if (!/^[a-z$_][a-z0-9$_]*$/i.test(name)) throw new Error('Bad name');
@@ -74,7 +76,7 @@ export interface IValue<A = any> {
   defineProperty(name: string, value: any, isGetter?: boolean): void;
 
   debug<T>(this: T):                                                     T;
-  get<X = this>():                                                       X;
+  type<X = this>():                                                       X;
   extends<T>(this: T, name: string):                                     T;
   clone<T>(this: T, fn: (type: T) => void):                              T;
   of<T>(this: T, ...a: any[]):                                           T;
@@ -86,6 +88,8 @@ export interface IValue<A = any> {
   mayNull:                                                               this;
 
   from<X>(this: new (input?: any) => X, data: any, warn?: warn): X;
+
+  compare(from: any, to: any, comparator?: comparator): number;
 }
 
 export const Value = <IValue>function Value() {};
@@ -127,7 +131,7 @@ Value.defineProperty('debug', function debug() {
   });
 });
 
-Value.defineProperty('get', function get() {
+Value.defineProperty('type', function type() {
   return this;
 });
 
@@ -261,6 +265,14 @@ Value.defineProperty('from', function from(value: any, warn?: warn) {
     value = this._default();
   }
   return value;
+});
+
+Value.defineProperty('compare', function compare(from: any, to: any, comparator?: comparator) {
+  if (from === to) return 0;
+  if (from == null && to == null) return 0;
+  if (typeof from === 'number' && typeof to === 'number')
+    if (isNaN(from) && isNaN(to)) return 0;
+  return 1;
 });
 
 // Boolean
@@ -413,10 +425,11 @@ export interface IRecord extends IValue<Object> {
   _fields:  Map<string, { type: IValue, postfill?: filler }>;
   mayEmpty: this;
 
-  get<X>(field?: string):                                                       X;
+  type<X>(field?: string):                                                       X;
   add<T>(this: T, field: string, type: any):                                    T;
   rewrite<T>(this: T, field: string, predicate: predicate<T>, value: any):      T;
   fixIf<T>(this: T, pattern: string | Function, handler: string | rewriter<T>): T;
+  postfill<T>(this: T, field: string, filler: filler):                          T;
 }
 
 export const Record = (<IRecord>Value.extends('Record'))
@@ -431,11 +444,11 @@ export const Record = (<IRecord>Value.extends('Record'))
     }
     return record;
   })
-  .setProperty('get', function get(field?: string) {
+  .setProperty('type', function type(field?: string): IValue {
     if (!field) return this;
     const offset = field.indexOf('.');
-    if (offset == -1) return this._fields.get(field);
-    else return this._fields.get(field.substring(0, offset)).get(field.substring(offset + 1));
+    if (offset == -1) return this._fields.get(field).type;
+    else return this._fields.get(field.substring(0, offset)).type.type(field.substring(offset + 1));
   })
   .setProperty('add', function add(field: string, type: any) {
     return this.clone((record: IRecord) => {
@@ -473,9 +486,15 @@ export const Record = (<IRecord>Value.extends('Record'))
   .setProperty('mayEmpty', function mayEmpty() {
     return this.setDefault(() => ({}));
   }, true)
+  .setProperty('compare', function compare(from: any, to: any, comparator?: comparator) {
+    let diff = 0;
+    for (const [name, { type }] of this._fields)
+      diff += type.compare(from && from[name], to && to[name]);
+    return diff;
+  })
   .addParser(function parseRecord(data: any, warn?: warn) {
     const result = new this();
-    if ('$' in data) Object.defineProperty(result, '$', { value: data.$ });
+    if ('$' in data) result['$'] = data.$; // Keep it serializable !!
     const fillers = <{ [name: string]: { type: IValue, postfill?: filler } }>{};
     for (const [name, child] of this._fields) {
       const type = child.type;
@@ -512,7 +531,7 @@ export interface ISum extends IValue {
   _cases:        Map<string, IValue>;
   _defaultCase?: IValue;
   mayEmpty:      this;
-  get<X>(field?: string):                      X;
+  type<X>(field?: string):                      X;
   either<T>(this: T, hint: string, type: any): T;
 }
 
@@ -527,11 +546,16 @@ export const Sum = (<ISum>Value.extends('Sum'))
   .setProperty('mayEmpty', function mayEmpty() {
     return this.setDefault(() => new class Undefined {});
   }, true)
-  .setProperty('get', function get(field: string) {
+  .setProperty('type', function type(field: string) {
     if (!field) return this;
     const offset = field.indexOf('.');
     if (offset == -1) return this._cases.get(field);
-    else return this._cases.get(field.substring(0, offset)).get(field.substring(offset + 1));
+    else return this._cases.get(field.substring(0, offset)).type(field.substring(offset + 1));
+  })
+  .setProperty('compare', function compare(from: any, to: any, comparator?: comparator) {
+    if (to && to.$) return this._cases.get(to.$).compare(from, to, comparator);
+    if (comparator != null) return comparator(from, to);
+    return 1;
   })
   .addParser(function parseValue(value: any, warn?: warn) {
     if (typeof value === 'object' && this._cases.has(value.$)) {
@@ -547,12 +571,12 @@ export interface ICollection<A> extends IValue<A> {
   _subtype: IValue;
   notEmpty: this;
 
-  get<X>(field?: string): X;
+  type<X>(field?: string): X;
 }
 
 export const Collection = (<ICollection<any>>Value.extends('Collection'))
   .setProperty('_subtype', null)
-  .setProperty('get', function get(field?: string) {
+  .setProperty('type', function type(field?: string) {
     if (!field) return this;
     const offset = field.indexOf('.');
     if (offset == -1) {
@@ -562,17 +586,20 @@ export const Collection = (<ICollection<any>>Value.extends('Collection'))
       }
     } else {
       const key = field.substring(0, offset);
-      if (key === 'value') return this._subtype.get(field.substring(offset + 1));
+      if (key === 'value') return this._subtype.type(field.substring(offset + 1));
       return null;
     }
   })
   .setProperty('notEmpty', function notEmpty() {
     throw new Error('Not implemented');
-  }, true);
+  }, true)
+;
 
 // Set
 export interface ISet extends ICollection<Set<any>> {
-  toJSON: (this: Set<any>) => any;
+  has(source: Set<any>, value: any): boolean;
+  compare(from: Set<any>, to: Set<any>, comparator?: comparator): number;
+  toJSON:  (this: Set<any>) => any;
 }
 
 export const Set = (<ISet>Collection.extends('Set'))
@@ -592,6 +619,30 @@ export const Set = (<ISet>Collection.extends('Set'))
       return value.size > 0;
     });
   }, true)
+  .setProperty('has', function has(source: Set<any>, value: any) {
+    if (source.has(value)) return true;
+    for (const item of source) {
+      if (this._subtype.diff(value, item)) continue ;
+      return true;
+    }
+    return false;
+  })
+  .setProperty('compare', function compare(from: any, to: any, comparator?: comparator) {
+    let diff = 0;
+    if (from) {
+      for (const item of from) {
+        if (this.has(to, item)) continue ;
+        diff += this._subtype.compare(item, null);
+      }
+    }
+    if (to) {
+      for (const item of to) {
+        if (this.has(from, item)) continue ;
+        diff += this._subtype.compare(null, item);
+      }
+    }
+    return diff;
+  })
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array || data instanceof _Set)) return ;
     const set = new _Set();
@@ -602,10 +653,12 @@ export const Set = (<ISet>Collection.extends('Set'))
   })
   .addConstraint(function isSet(data: any) {
     if (!(data instanceof _Set)) throw new TypeError('Require a Set');
-  });
+  })
+;
 
 // Array
 export interface IArray extends ICollection<Array<any>> {
+  compare(from: Array<any>, to: Array<any>, comparator?: comparator): number;
 }
 
 export const Array = (<IArray>Collection.extends('Array'))
@@ -620,6 +673,13 @@ export const Array = (<IArray>Collection.extends('Array'))
       return value.length > 0;
     });
   }, true)
+  .setProperty('compare', function compare(from: any, to: any, comparator?: comparator) {
+    const length = Math.max(from.length, to.length);
+    let diff = 0;
+    for (let i = 0; i < length; i += 1)
+      diff += this._subtype.compare(from[i], to[i]);
+    return diff;
+  })
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array)) return ;
     const array = new _Array();
@@ -641,7 +701,8 @@ export interface IMap extends ICollection<Map<any, any>> {
   _index: IValue;
   toJSON: (this: Map<any, any>) => any;
 
-  get<X>(field?: string): X;
+  type<X>(field?: string): X;
+  compare(from: Map<any, any>, to: Map<any, any>, comparator?: comparator): number;
 }
 
 export const Map = (<IMap>Collection.extends('Map'))
@@ -665,7 +726,7 @@ export const Map = (<IMap>Collection.extends('Map'))
       value._subtype = Value.of(type);
     });
   })
-  .setProperty('get', function get(field?: string) {
+  .setProperty('type', function type(field?: string) {
     if (!field) return this;
     const offset = field.indexOf('.');
     if (offset == -1) {
@@ -677,11 +738,37 @@ export const Map = (<IMap>Collection.extends('Map'))
     } else {
       const key = field.substring(0, offset);
       switch (field) {
-      case 'key':   return this._index.get(field.substring(offset + 1));
-      case 'value': return this._subtype.get(field.substring(offset + 1));
+      case 'key':   return this._index.type(field.substring(offset + 1));
+      case 'value': return this._subtype.type(field.substring(offset + 1));
       default :     return null;
       }
     }
+  })
+  .setProperty('get', function get(source: Map<any, any>, key: any) {
+    if (source.has(key)) return source.get(key);
+    for (const [item, value] of source) {
+      if (this._index.diff(key, item)) continue ;
+      return value;
+    }
+    return null;
+  })
+  .setProperty('compare', function compare(from: any, to: any, comparator?: comparator) {
+    const done = new Set();
+    let diff = 0;
+    if (from) {
+      for (const [key, value] of from) {
+        const otherValue = this.get(to, key);
+        diff += this._subtype.compare(value, otherValue);
+        if (otherValue != null) done.add(otherValue);
+      }
+    }
+    if (to) {
+      for (const [key, value] of to) {
+        if (done.has(value)) continue ;
+        diff += this._subtype.compare(null, value);
+      }
+    }
+    return diff;
   })
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array || data instanceof _Map)) return ;
