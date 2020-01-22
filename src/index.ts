@@ -427,11 +427,12 @@ export const Enum = (<IEnum>Value.extends('Enum'))
   });
 
 // Record
-export interface IRecord extends IValue<Object> {
+export interface IRecord extends IValue<{ $?: string }> {
   _fields:  Map<string, { type: IValue, postfill?: filler }>;
   mayEmpty: this;
 
-  type<X>(field?: string):                                                       X;
+  type<X>(field?: string): X;
+
   add<T>(this: T, field: string, type: any):                                    T;
   rewrite<T>(this: T, field: string, predicate: predicate<T>, value: any):      T;
   fixIf<T>(this: T, pattern: string | Function, handler: string | rewriter<T>): T;
@@ -503,7 +504,7 @@ export const Record = (<IRecord>Value.extends('Record'))
   })
   .addParser(function parseRecord(data: any, warn?: warn) {
     const result = new this();
-    if ('$' in data) result['$'] = data.$; // Keep it serializable !!
+    if ('$' in data) result.$ = data.$; // Keep it serializable !!
     const fillers = <{ [name: string]: { type: IValue, postfill?: filler } }>{};
     for (const [name, child] of this._fields) {
       const type = child.type;
@@ -521,9 +522,9 @@ export const Record = (<IRecord>Value.extends('Record'))
       const { type, postfill } = fillers[name];
       let value = null;
       try {
-        value = postfill(result);
+        value = postfill.call(this, result);
         value = type.from(value, warn);
-        if (value != null) result[name] = value;
+        if (value != null) Object.defineProperty(result, name, { value }); // Do not serialize
       } catch (e) {
         const strval = JSON.stringify(value);
         throw new TypeError('Failed on field: ' + name + ' = ' + strval, e);
