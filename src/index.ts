@@ -32,10 +32,9 @@ export type rewriter<T>   = (this: T, a: any) => any;
 export type predicate<T>  = (this: T, a: any) => boolean;
 export type assertion<T>  = (this: T, a: any) => void;
 export type constraint<T> = RegExp | predicate<T> | assertion<T>;
-export type parser<T>     = (this: T, a: any) => any | void;
-export type warn          = (error: Error)    => void;
-export type filler        = (input: any)      => any;
-export type comparator    = (path: string, left: any, right: any) => number;
+export type parser<T>     = (this: T, a: any)       => any | void;
+export type warn          = (error: Error)          => void;
+export type filler        = (input: any)            => any;
 
 const makeConstructor = (name: string) => {
   if (!/^[a-z$_][a-z0-9$_]*$/i.test(name)) throw new Error('Bad name');
@@ -59,10 +58,6 @@ const tagCQESType = (Type: any) => {
 
 export function isType(Type: any) {
   return !!(Type && Type[_tag]);
-}
-
-function defaultComparator(path: string, left: any, right: any) {
-  return 1;
 }
 
 // Value
@@ -271,14 +266,12 @@ Value.defineProperty('from', function from(value: any, warn?: warn) {
   return value;
 });
 
-Value.defineProperty('compare', function compare(from: any, to: any, comparator: comparator, path: string) {
-  if (comparator == null) comparator = defaultComparator;
-  if (path == null) path = '';
+Value.defineProperty('compare', function compare(from: any, to: any) {
   if (from === to) return 0;
   if (from == null && to == null) return 0;
   if (typeof from === 'number' && typeof to === 'number')
     if (isNaN(from) && isNaN(to)) return 0;
-  return comparator(path, from, to);
+  return 1;
 });
 
 // Boolean
@@ -485,22 +478,19 @@ export const Record = (<IRecord>Value.extends('Record'))
   })
   .setProperty('postfill', function postfill(field: string, filler: filler) {
     return this.clone((record: IRecord) => {
-      const child = this._fields.get(field);
+      const child = record._fields.get(field);
       if (child == null) throw new Error('Require field: ' + field + ' to be already defined');
-      this._fields.set(field, { ...child, postfill: filler });
+      record._fields.set(field, { ...child, postfill: filler });
     });
   })
   .setProperty('mayEmpty', function mayEmpty() {
     return this.setDefault(() => ({}));
   }, true)
-  .setProperty('compare', function compare(from: any, to: any, comparator: comparator, path: string) {
-    if (comparator == null) comparator = defaultComparator;
-    if (path == null) path = '';
+  .setProperty('compare', function compare(from: any, to: any) {
     let diff = 0;
     for (const [name, { type }] of this._fields)
-      diff += type.compare(from && from[name], to && to[name], comparator, path + '.' + name);
-    if (diff === 0) return diff;
-    return comparator(path, from, to);
+      diff += type.compare(from && from[name], to && to[name]);
+    return diff;
   })
   .addParser(function parseRecord(data: any, warn?: warn) {
     const result = new this();
@@ -562,12 +552,9 @@ export const Sum = (<ISum>Value.extends('Sum'))
     if (offset == -1) return this._cases.get(field);
     else return this._cases.get(field.substring(0, offset)).type(field.substring(offset + 1));
   })
-  .setProperty('compare', function compare(from: any, to: any, comparator: comparator, path: string) {
-    if (comparator == null) comparator = defaultComparator;
-    if (path == null) path = '';
-    const type = to ? this._cases.get(to.$) : null;
-    if (type != null && type.compare(from, to, comparator, path + '$' + to.$) === 0) return 0;
-    return comparator(path, from, to);
+  .setProperty('compare', function compare(from: any, to: any) {
+    if (to && to.$) return this._cases.get(to.$).compare(from, to);
+    return 1;
   })
   .addParser(function parseValue(value: any, warn?: warn) {
     if (typeof value === 'object' && this._cases.has(value.$)) {
@@ -639,20 +626,21 @@ export const Set = (<ISet>Collection.extends('Set'))
     }
     return false;
   })
-  .setProperty('compare', function compare(from: any, to: any, comparator: comparator, path: string) {
-    if (comparator == null) comparator = defaultComparator;
-    if (path == null) path = '';
+  .setProperty('compare', function compare(from: any, to: any) {
     let diff = 0;
-    if (from != null) for (const item of from) {
-      if (this.has(to, item)) continue ;
-      diff += this._subtype.compare(item, null, comparator, path + '/');
+    if (from) {
+      for (const item of from) {
+        if (this.has(to, item)) continue ;
+        diff += this._subtype.compare(item, null);
+      }
     }
-    if (to != null) for (const item of to) {
-      if (this.has(from, item)) continue ;
-      diff += this._subtype.compare(null, item, comparator, path + '/');
+    if (to) {
+      for (const item of to) {
+        if (this.has(from, item)) continue ;
+        diff += this._subtype.compare(null, item);
+      }
     }
-    if (diff === 0) return 0;
-    return comparator(path, from, to);
+    return diff;
   })
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array || data instanceof _Set)) return ;
@@ -684,15 +672,12 @@ export const Array = (<IArray>Collection.extends('Array'))
       return value.length > 0;
     });
   }, true)
-  .setProperty('compare', function compare(from: any, to: any, comparator: comparator, path: string) {
-    if (comparator == null) comparator = defaultComparator;
-    if (path == null) path = '';
+  .setProperty('compare', function compare(from: any, to: any) {
     const length = Math.max(from.length, to.length);
     let diff = 0;
     for (let i = 0; i < length; i += 1)
-      diff += this._subtype.compare(from[i], to[i], comparator, path + '/');
-    if (diff === 0) return 0;
-    return comparator(path, from, to);
+      diff += this._subtype.compare(from[i], to[i]);
+    return diff;
   })
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array)) return ;
@@ -766,22 +751,23 @@ export const Map = (<IMap>Collection.extends('Map'))
     }
     return null;
   })
-  .setProperty('compare', function compare(from: any, to: any, comparator: comparator, path: string) {
-    if (comparator == null) comparator = defaultComparator;
-    if (path == null) path = '';
-    let diff = 0;
+  .setProperty('compare', function compare(from: any, to: any) {
     const done = new Set();
-    if (from) for (const [key, value] of from) {
-      const otherValue = this.get(to, key);
-      diff += this._subtype.compare(value, otherValue, comparator, path + '/');
-      if (otherValue != null) done.add(otherValue);
+    let diff = 0;
+    if (from) {
+      for (const [key, value] of from) {
+        const otherValue = this.get(to, key);
+        diff += this._subtype.compare(value, otherValue);
+        if (otherValue != null) done.add(otherValue);
+      }
     }
-    if (to) for (const [key, value] of to) {
-      if (done.has(value)) continue ;
-      diff += this._subtype.compare(null, value, comparator, path + '/');
+    if (to) {
+      for (const [key, value] of to) {
+        if (done.has(value)) continue ;
+        diff += this._subtype.compare(null, value);
+      }
     }
-    if (diff === 0) return 0;
-    return comparator(path, from, to);
+    return diff;
   })
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array || data instanceof _Map)) return ;
