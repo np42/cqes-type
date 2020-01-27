@@ -421,7 +421,7 @@ export const Enum = (<IEnum>Value.extends('Enum'))
 
 // Record
 export interface IRecord extends IValue<{ $?: string }> {
-  _fields:  Map<string, { type: IValue, postfill?: filler }>;
+  _fields:  Map<string, { type: IValue, postfill?: { filler: filler, enumerable: boolean } }>;
   mayEmpty: this;
 
   type<X>(field?: string): X;
@@ -429,7 +429,7 @@ export interface IRecord extends IValue<{ $?: string }> {
   add<T>(this: T, field: string, type: any):                                    T;
   rewrite<T>(this: T, field: string, predicate: predicate<T>, value: any):      T;
   fixIf<T>(this: T, pattern: string | Function, handler: string | rewriter<T>): T;
-  postfill<T>(this: T, field: string, filler: filler):                          T;
+  postfill<T>(this: T, field: string, filler: filler, enumerable?: boolean):  T;
 }
 
 export const Record = (<IRecord>Value.extends('Record'))
@@ -476,11 +476,11 @@ export const Record = (<IRecord>Value.extends('Record'))
     }
     return this.addRewriter((input: any) => (<Function>pattern)(input) ? (<Function>handler)(input) : input);
   })
-  .setProperty('postfill', function postfill(field: string, filler: filler) {
+  .setProperty('postfill', function postfill(field: string, filler: filler, enumerable?: boolean) {
     return this.clone((record: IRecord) => {
       const child = record._fields.get(field);
       if (child == null) throw new Error('Require field: ' + field + ' to be already defined');
-      record._fields.set(field, { ...child, postfill: filler });
+      record._fields.set(field, { ...child, postfill: { filler, enumerable } });
     });
   })
   .setProperty('mayEmpty', function mayEmpty() {
@@ -494,27 +494,28 @@ export const Record = (<IRecord>Value.extends('Record'))
   })
   .addParser(function parseRecord(data: any, warn?: warn) {
     const result = new this();
-    if ('$' in data) result.$ = data.$; // Keep it serializable !!
-    const fillers = <{ [name: string]: { type: IValue, postfill?: filler } }>{};
-    for (const [name, child] of this._fields) {
-      const type = child.type;
+    if ('$' in data) result.$ = data.$; // Keep it enumerable !!
+    const fillers = <{ [name: string]: { type: IValue, postfill: filler, enumerable: boolean } }>{};
+    for (const [name, { type, postfill }] of this._fields) {
       try {
         const value = type.from(data[name], warn);
         if (value != null) result[name] = value;
-        else if (child.postfill != null) fillers[name] = child;
+        else if (postfill != null) {
+          fillers[name] = { type, postfill: postfill.filler, enumerable: !!postfill.enumerable };
+        }
       } catch (e) {
-        if (child.postfill != null) continue ;
+        if (postfill != null) continue ;
         const strval = JSON.stringify(data[name]);
         throw new TypeError('Failed on field: ' + name + ' = ' + strval, e);
       }
     }
     for (const name in fillers) {
-      const { type, postfill } = fillers[name];
+      const { type, postfill, enumerable } = fillers[name];
       let value = null;
       try {
         value = postfill.call(this, result);
         value = type.from(value, warn);
-        if (value != null) Object.defineProperty(result, name, { value }); // Do not serialize
+        if (value != null) Object.defineProperty(result, name, { value, enumerable });
       } catch (e) {
         const strval = JSON.stringify(value);
         throw new TypeError('Failed on field: ' + name + ' = ' + strval, e);
