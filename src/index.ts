@@ -2,6 +2,10 @@ import { v4 as uuid }    from 'uuid';
 import { isConstructor } from 'cqes-util';
 import { inspect }       from 'util';
 
+// TODO:
+//  > Add Range Type: 5-10, 5 or more, 10 or less, not between 5-10
+//  > Handle Recursive Sum Types
+
 const _tag      = Symbol('cqes-type');
 
 export const _Boolean  = global.Boolean;
@@ -75,7 +79,7 @@ export interface IValue<A = any> {
   defineProperty(name: string, value: any, isGetter?: boolean): void;
 
   debug<T>(this: T):                                                     T;
-  type<X = this>():                                                       X;
+  type<X = this>():                                                      X;
   extends<T>(this: T, name: string):                                     T;
   clone<T>(this: T, fn: (type: T) => void):                              T;
   of<T>(this: T, ...a: any[]):                                           T;
@@ -86,9 +90,11 @@ export interface IValue<A = any> {
   setDefault<T>(this: T, fn: any):                                       T;
   mayNull:                                                               this;
 
-  from<X>(this: new (input?: any) => X, data: any, warn?: warn): X;
+  from<X>(this: new (input?: A) => X, data: A, warn?: warn): X;
 
-  compare(from: any, to: any): number;
+  compare(from: any, to: any):                   number;
+  writeTo(format: string, target: any, data: A): void;
+  readFrom(format: string, data: any):           A;
 }
 
 export const Value = <IValue>function Value() {};
@@ -532,7 +538,7 @@ export interface ISum extends IValue {
   _cases:        Map<string, IValue>;
   _defaultCase?: IValue;
   mayEmpty:      this;
-  type<X>(field?: string):                      X;
+  type<X>(field?: string):                     X;
   either<T>(this: T, hint: string, type: any): T;
 }
 
