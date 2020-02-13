@@ -433,9 +433,10 @@ export interface IRecord extends IValue<{ $?: string }> {
   type<X>(field?: string): X;
 
   add<T>(this: T, field: string, type: any):                                    T;
+  keepFields<T>(this: T, ...fields: Array<string>):                             T;
   rewrite<T>(this: T, field: string, predicate: predicate<T>, value: any):      T;
   fixIf<T>(this: T, pattern: string | Function, handler: string | rewriter<T>): T;
-  postfill<T>(this: T, field: string, filler: filler, enumerable?: boolean):  T;
+  postfill<T>(this: T, field: string, filler: filler, enumerable?: boolean):    T;
 }
 
 export const Record = (<IRecord>Value.extends('Record'))
@@ -459,6 +460,20 @@ export const Record = (<IRecord>Value.extends('Record'))
   .setProperty('add', function add(field: string, type: any) {
     return this.clone((record: IRecord) => {
       record._fields.set(field, { type: Value.of(type) });
+    });
+  })
+  .setProperty('keepFields', function keepFields(...fields: Array<string>) {
+    return this.clone((record: IRecord) => {
+      const rest = Array.from(fields);
+      const keys = Array.from(this._fields.keys()).forEach(field => {
+        const offset = rest.indexOf(field);
+        if (offset > -1) {
+          rest.splice(offset, 1);
+        } else {
+          record._fields.delete(field);
+        }
+      });
+      if (rest.length > 0) throw new Error('Unable to keep fields' + rest);
     });
   })
   .setProperty('rewrite', function rewrite(field: string, predicate: any, value: any) {
