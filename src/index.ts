@@ -433,6 +433,7 @@ export interface IRecord extends IValue<{ $?: string }> {
   type<X>(field?: string): X;
 
   add<T>(this: T, field: string, type: any):                                    T;
+  remove<T>(this: T, field: string):                                            T;
   keepFields<T>(this: T, ...fields: Array<string>):                             T;
   rewrite<T>(this: T, field: string, predicate: predicate<T>, value: any):      T;
   fixIf<T>(this: T, pattern: string | Function, handler: string | rewriter<T>): T;
@@ -462,17 +463,22 @@ export const Record = (<IRecord>Value.extends('Record'))
       record._fields.set(field, { type: Value.of(type) });
     });
   })
+  .setProperty('remove', function remove(field: string) {
+    return this.clone((record: IRecord) => {
+      record._fields.delete(field);
+    });
+  })
   .setProperty('keepFields', function keepFields(...fields: Array<string>) {
     return this.clone((record: IRecord) => {
-      const rest = Array.from(fields);
-      const keys = Array.from(this._fields.keys()).forEach(field => {
+      const rest = [ ...fields ];
+      for (const field of record._fields.keys()) {
         const offset = rest.indexOf(field);
         if (offset > -1) {
           rest.splice(offset, 1);
         } else {
           record._fields.delete(field);
         }
-      });
+      }
       if (rest.length > 0) throw new Error('Unable to keep fields' + rest);
     });
   })
