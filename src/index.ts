@@ -81,7 +81,7 @@ export interface IValue<A = any> {
   debug<T>(this: T):                                                     T;
   type<X = this>():                                                      X;
   extends<T>(this: T, name: string):                                     T;
-  clone<T>(this: T, fn: (type: T) => void):                              T;
+  clone<T>(this: T, fn?: (type: T) => void):                             T;
   of<T>(this: T, ...a: any[]):                                           T;
   setProperty<T>(this: T, name: string, value: any, isGetter?: boolean): T;
   addRewriter<T>(this: T, rewriter: rewriter<T>):                        T;
@@ -108,11 +108,15 @@ Value.defineProperty = function defineProperty(name: string, value: any, isGette
       _Object.defineProperty(this, indirection, { value, enumerable: true, writable: true });
       if (!(name in this)) {
         _Object.defineProperty(this, name, { get: function () {
-          const cached = this._cache.get(name);
-          if (cached != null) return cached;
-          const value = this[indirection]();
-          this._cache.set(name, value);
-          return value;
+          if (this._cache != null) {
+            const cached = this._cache.get(name);
+            if (cached != null) return cached;
+            const value = this[indirection]();
+            this._cache.set(name, value);
+            return value;
+          } else {
+            return this[indirection]();
+          }
         }, enumerable: true });
       }
     } else {
@@ -127,7 +131,6 @@ Value.defineProperty('_debug',      false);
 Value.defineProperty('_rewriters',  new _Array());
 Value.defineProperty('_parsers',    new _Array());
 Value.defineProperty('_assertions', new _Array());
-Value.defineProperty('_cache',      new _Map());
 
 Value.defineProperty('debug', function debug() {
   debugger;
