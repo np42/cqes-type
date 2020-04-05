@@ -91,10 +91,8 @@ export interface IValue<A = any> {
   mayNull:                                                               this;
 
   from<X>(this: new (input?: A) => X, data: A, warn?: warn): X;
-
-  compare(from: any, to: any):                   number;
-  writeTo(format: string, target: any, data: A): void;
-  readFrom(format: string, data: any):           A;
+  compare(from: any, to: any): number;
+  walk<X>(this: new (x?: A) => X, data: X, iterator: any, key?: any, ...args: Array<any>): X;
 }
 
 export const Value = <IValue>function Value() {};
@@ -283,6 +281,15 @@ Value.defineProperty('compare', function compare(from: any, to: any) {
   return 1;
 });
 
+Value.defineProperty('walk', function walk<A>(data: A, iterator: any, key: any, ...args: Array<any>): A {
+  const _iterator = typeof iterator === 'string' ? this[iterator] : iterator;
+  if (typeof _iterator === 'function') {
+    const result = _iterator.call(this, data, args[0], key, ...args.slice(1));
+    if (result != null) return result;
+  }
+  return data;
+});
+
 // Boolean
 export interface IBoolean extends IValue<Boolean> {
   _true:  Set<string>;
@@ -461,6 +468,24 @@ export const Record = (<IRecord>Value.extends('Record'))
     if (offset == -1) return this._fields.get(field).type;
     else return this._fields.get(field.substring(0, offset)).type.type(field.substring(offset + 1));
   })
+  .setProperty('compare', function compare(from: any, to: any) {
+    let diff = 0;
+    for (const [name, { type }] of this._fields)
+      diff += type.compare(from && from[name], to && to[name]);
+    return diff;
+  })
+  .setProperty('walk', function walk<A>(data: A, iterator: any, key: any, ...args: Array<any>): A {
+    const _iterator = typeof iterator === 'string' ? this[iterator] : iterator;
+    if (typeof _iterator === 'function') {
+      const result = _iterator.call(this, data, args[0], key, ...args.slice(1));
+      if (result && result != data) data = result;
+    }
+    for (const [name, { type }] of this._fields) {
+      if (data[name] == null) continue ;
+      data[name] = type.walk(data[name], iterator, name, ...args);
+    }
+    return data;
+  })
   .setProperty('add', function add(field: string, type: any) {
     return this.clone((record: IRecord) => {
       record._fields.set(field, { type: Value.of(type) });
@@ -516,12 +541,6 @@ export const Record = (<IRecord>Value.extends('Record'))
   .setProperty('mayEmpty', function mayEmpty() {
     return this.setDefault(() => ({}));
   }, true)
-  .setProperty('compare', function compare(from: any, to: any) {
-    let diff = 0;
-    for (const [name, { type }] of this._fields)
-      diff += type.compare(from && from[name], to && to[name]);
-    return diff;
-  })
   .addParser(function parseRecord(data: any, warn?: warn) {
     const result = new this();
     if ('$' in data) result.$ = data.$; // Keep it enumerable !!
@@ -545,7 +564,7 @@ export const Record = (<IRecord>Value.extends('Record'))
       try {
         value = postfill.call(this, result);
         value = type.from(value, warn);
-        if (value != null) Object.defineProperty(result, name, { value, enumerable });
+        if (value != null) Object.defineProperty(result, name, { value, enumerable, writable: true });
       } catch (e) {
         const strval = JSON.stringify(value);
         throw new TypeError('Failed on field: ' + name + ' = ' + strval, e);
@@ -586,6 +605,22 @@ export const Sum = (<ISum>Value.extends('Sum'))
   .setProperty('compare', function compare(from: any, to: any) {
     if (to && to.$) return this._cases.get(to.$).compare(from, to);
     return 1;
+  })
+  .setProperty('walk', function walk<A>(data: any, iterator: any, key: any, ...args: Array<any>): A {
+    const _iterator = typeof iterator === 'string' ? this[iterator] : iterator;
+    if (typeof _iterator === 'function') {
+      const result = _iterator.call(this, data, args[0], key, ...args.slice(1));
+      if (typeof result === 'string') {
+        data.$ = result;
+        return this.type(result).walk(data, iterator, key, ...args);
+      } else if (result && result.$) {
+        return this.type(result.$).walk(result, iterator, key, ...args);
+      }
+    } else if (data && data.$ != null) {
+      return this.type(data.$).walk(data, iterator, key, ...args);
+    } else {
+      return data;
+    }
   })
   .addParser(function parseValue(value: any, warn?: warn) {
     if (typeof value === 'object' && this._cases.has(value.$)) {
@@ -673,6 +708,16 @@ export const Set = (<ISet>Collection.extends('Set'))
     }
     return diff;
   })
+  .setProperty('walk', function walk<A>(data: any, iterator: string, key: any, ...args: Array<any>): A {
+    const copy = new _Set(data || []);
+    data.clear();
+    let i = 0;
+    for (const item of copy) {
+      data.add(this._subtype.walk(item, iterator, i, ...args));
+      i += 1;
+    }
+    return data;
+  })
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array || data instanceof _Set)) return ;
     const set = new _Set();
@@ -709,6 +754,12 @@ export const Array = (<IArray>Collection.extends('Array'))
     for (let i = 0; i < length; i += 1)
       diff += this._subtype.compare(from[i], to[i]);
     return diff;
+  })
+  .setProperty('walk', function walk<A>(data: any, iterator: string, key: any, ...args: Array<any>): A {
+    if (data == null) data = new _Array();
+    for (let i = 0; i < data.length; i += 1)
+      data[i] = this._subtype.walk(data[i], iterator, i, ...args);
+    return data;
   })
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array)) return ;
@@ -799,6 +850,12 @@ export const Map = (<IMap>Collection.extends('Map'))
       }
     }
     return diff;
+  })
+  .setProperty('walk', function walk<A>(data: any, iterator: string, key: any, ...args: Array<any>): A {
+    if (data == null) data = new _Map();
+    for (const [key, value] of data)
+      data.set(key, this._subtype.walk(value, iterator, key, ...args));
+    return data;
   })
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array || data instanceof _Map)) return ;

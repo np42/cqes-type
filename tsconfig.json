@@ -11,9 +11,10 @@
   , "declaration": true
   , "strictFunctionTypes": false
   , "allowSyntheticDefaultImports": true
+  , "rootDir": "./"
   , "outDir": "dist"
   , "sourceMap": true
   }
-, "include": [ "src/index.ts", "test" ]
+, "include": [ "src/index.ts" ]
 , "exclude": [ "node_modules", "**/*.spec.ts" ]
 }
