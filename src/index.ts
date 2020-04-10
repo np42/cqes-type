@@ -675,6 +675,7 @@ export const Collection = (<ICollection<any>>Value.extends('Collection'))
 // Set
 export interface ISet extends ICollection<Set<any>> {
   _constructor: { new (): Set<any> };
+  from<X>(this: new () => X, data: Set<any> | Array<any>, warn?: warn): X;
   has(source: Set<any>, value: any): boolean;
   compare(from: Set<any>, to: Set<any>): number;
   toJSON: (this: Set<any>) => any;
