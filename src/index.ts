@@ -738,7 +738,6 @@ export const Set = (<ISet>Collection.extends('Set'))
   })
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array || data instanceof _Set)) return ;
-    debugger;
     const set = new this._constructor();
     for (const value of data)
       set.add(this._subtype.from(value, warn));
