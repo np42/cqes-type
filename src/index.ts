@@ -51,6 +51,16 @@ const makeConstructor = (name: string) => {
   );
 }
 
+const makeCollectionConstructor = (name: string, collection: Function) => {
+  if (!/^[a-z$_][a-z0-9$_]*$/i.test(name)) throw new Error('Bad name');
+  return eval
+  ( [ '(function (Collection) {'
+    , '  return class ' + name + ' extends Collection {};'
+    , '})'
+    ].join('\n')
+  )(collection);
+};
+
 const fnHasNativeProps = _Object.getOwnPropertyNames(function () {}).reduce((result, key) => {
   result[key] = true;
   return result;
@@ -282,6 +292,7 @@ Value.defineProperty('compare', function compare(from: any, to: any) {
 });
 
 Value.defineProperty('walk', function walk<A>(data: A, iterator: any, key: any, ...args: Array<any>): A {
+  if (data == null) return null;
   const _iterator = typeof iterator === 'string' ? this[iterator] : iterator;
   if (typeof _iterator === 'function') {
     const result = _iterator.call(this, data, args[0], key, ...args.slice(1));
@@ -475,6 +486,7 @@ export const Record = (<IRecord>Value.extends('Record'))
     return diff;
   })
   .setProperty('walk', function walk<A>(data: A, iterator: any, key: any, ...args: Array<any>): A {
+    if (data == null) return null;
     const _iterator = typeof iterator === 'string' ? this[iterator] : iterator;
     if (typeof _iterator === 'function') {
       const result = _iterator.call(this, data, args[0], key, ...args.slice(1));
@@ -577,7 +589,7 @@ export const Record = (<IRecord>Value.extends('Record'))
   });
 
 // Sum
-export interface ISum extends IValue {
+export interface ISum extends IValue<{ $: string }> {
   _cases:        Map<string, IValue>;
   _defaultCase?: IValue;
   mayEmpty:      this;
@@ -619,7 +631,7 @@ export const Sum = (<ISum>Value.extends('Sum'))
     } else if (data && data.$ != null) {
       return this.type(data.$).walk(data, iterator, key, ...args);
     } else {
-      return data;
+      return null;
     }
   })
   .addParser(function parseValue(value: any, warn?: warn) {
@@ -662,12 +674,16 @@ export const Collection = (<ICollection<any>>Value.extends('Collection'))
 
 // Set
 export interface ISet extends ICollection<Set<any>> {
+  _constructor: { new (): Set<any> };
   has(source: Set<any>, value: any): boolean;
   compare(from: Set<any>, to: Set<any>): number;
-  toJSON:  (this: Set<any>) => any;
+  toJSON: (this: Set<any>) => any;
 }
 
 export const Set = (<ISet>Collection.extends('Set'))
+  .setProperty('_constructor', function () {
+    return makeCollectionConstructor(this.name, _Set);
+  }, true)
   .setProperty('of', function (type: any) {
     return this.clone((value: ISet) => value._subtype = Value.of(type));
   })
@@ -709,6 +725,7 @@ export const Set = (<ISet>Collection.extends('Set'))
     return diff;
   })
   .setProperty('walk', function walk<A>(data: any, iterator: string, key: any, ...args: Array<any>): A {
+    if (data == null) return null;
     const copy = new _Set(data || []);
     data.clear();
     let i = 0;
@@ -720,7 +737,8 @@ export const Set = (<ISet>Collection.extends('Set'))
   })
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array || data instanceof _Set)) return ;
-    const set = new _Set();
+    debugger;
+    const set = new this._constructor();
     for (const value of data)
       set.add(this._subtype.from(value, warn));
     _Object.defineProperty(set, 'toJSON', { value: this.toJSON });
@@ -733,10 +751,14 @@ export const Set = (<ISet>Collection.extends('Set'))
 
 // Array
 export interface IArray extends ICollection<Array<any>> {
+  _constructor: { new (): Array<any> };
   compare(from: Array<any>, to: Array<any>): number;
 }
 
 export const Array = (<IArray>Collection.extends('Array'))
+  .setProperty('_constructor', function () {
+    return makeCollectionConstructor(this.name, _Array);
+  }, true)
   .setProperty('_default', function () {
     return new _Array();
   })
@@ -756,14 +778,14 @@ export const Array = (<IArray>Collection.extends('Array'))
     return diff;
   })
   .setProperty('walk', function walk<A>(data: any, iterator: string, key: any, ...args: Array<any>): A {
-    if (data == null) data = new _Array();
+    if (data == null) return null;
     for (let i = 0; i < data.length; i += 1)
       data[i] = this._subtype.walk(data[i], iterator, i, ...args);
     return data;
   })
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array)) return ;
-    const array = new _Array();
+    const array = new this._constructor();
     for (let i = 0; i < data.length; i += 1) {
       try { array[i] = this._subtype.from(data[i], warn); }
       catch (e) {
@@ -779,6 +801,7 @@ export const Array = (<IArray>Collection.extends('Array'))
 
 // Map
 export interface IMap extends ICollection<Map<any, any>> {
+  _constructor: { new (): Map<any, any> };
   _index: IValue;
   toJSON: (this: Map<any, any>) => any;
 
@@ -787,6 +810,9 @@ export interface IMap extends ICollection<Map<any, any>> {
 }
 
 export const Map = (<IMap>Collection.extends('Map'))
+  .setProperty('_constructor', function () {
+    return makeCollectionConstructor(this.name, _Map);
+  }, true)
   .setProperty('_index', null)
   .setProperty('_default', function () {
     const map = new _Map();
@@ -852,14 +878,14 @@ export const Map = (<IMap>Collection.extends('Map'))
     return diff;
   })
   .setProperty('walk', function walk<A>(data: any, iterator: string, key: any, ...args: Array<any>): A {
-    if (data == null) data = new _Map();
+    if (data == null) return null;
     for (const [key, value] of data)
       data.set(key, this._subtype.walk(value, iterator, key, ...args));
     return data;
   })
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array || data instanceof _Map)) return ;
-    const map = new _Map();
+    const map = new this._constructor();
     for (const [key, value] of data) {
       try { map.set(this._index.from(key, warn), this._subtype.from(value, warn)); }
       catch (e) {
