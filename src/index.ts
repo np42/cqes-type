@@ -375,12 +375,16 @@ export const Number = (<INumber>Value.extends('Number'))
 
 // String
 export interface IString extends IValue<String> {
-  notEmpty: this
+  notEmpty: this;
+  notBlank: this;
 }
 
 export const String = (<IString>Value.extends('String'))
   .setProperty('notEmpty', function notEmpty() {
     return this.addConstraint((value: string) => _String(value) !== '');
+  }, true)
+  .setProperty('notBlank', function notEmpty() {
+    return this.addConstraint((value: string) => !/^[\s\n]*$/.test(value));
   }, true)
   .addParser(function parseNative(value: any) {
     switch (typeof value) {
