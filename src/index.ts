@@ -292,7 +292,6 @@ Value.defineProperty('compare', function compare(from: any, to: any) {
 });
 
 Value.defineProperty('walk', function walk<A>(data: A, iterator: any, key: any, ...args: Array<any>): A {
-  if (data == null) return null;
   const _iterator = typeof iterator === 'string' ? this[iterator] : iterator;
   if (typeof _iterator === 'function') {
     const result = _iterator.call(this, data, args[0], key, ...args.slice(1));
@@ -497,7 +496,7 @@ export const Record = (<IRecord>Value.extends('Record'))
       if (result && result != data) data = result;
     }
     for (const [name, { type }] of this._fields) {
-      if (data[name] == null) continue ;
+      if (!(name in data)) continue ;
       data[name] = type.walk(data[name], iterator, name, ...args);
     }
     return data;
@@ -623,6 +622,7 @@ export const Sum = (<ISum>Value.extends('Sum'))
     return 1;
   })
   .setProperty('walk', function walk<A>(data: any, iterator: any, key: any, ...args: Array<any>): A {
+    if (data == null) return null;
     const _iterator = typeof iterator === 'string' ? this[iterator] : iterator;
     if (typeof _iterator === 'function') {
       const result = _iterator.call(this, data, args[0], key, ...args.slice(1));
