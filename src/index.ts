@@ -102,7 +102,7 @@ export interface IValue<A = any> {
 
   from<X>(this: new (input?: A) => X, data: A, warn?: warn): X;
   compare(from: any, to: any): number;
-  walk<X>(this: new (x?: A) => X, data: X, iterator: any, key?: any, ...args: Array<any>): X;
+  walk<X>(this: new (x?: A) => X, data: X, iter: string, key?: any, ...args: Array<any>): X;
 }
 
 export const Value = <IValue>function Value() {};
@@ -291,11 +291,14 @@ Value.defineProperty('compare', function compare(from: any, to: any) {
   return 1;
 });
 
-Value.defineProperty('walk', function walk<A>(data: A, iterator: any, key: any, ...args: Array<any>): A {
-  const _iterator = typeof iterator === 'string' ? this[iterator] : iterator;
-  if (typeof _iterator === 'function') {
-    const result = _iterator.call(this, data, args[0], key, ...args.slice(1));
-    if (result != null) return result;
+Value.defineProperty('walk', function walk<A>(data: A, iter: string, key: any, ...args: Array<any>): A {
+  if (typeof this[iter] === 'function') {
+    const value = this[iter].call(this, data, args[0], key, ...args.slice(1));
+    if (value != null && value != data) data = value;
+  }
+  if (typeof this[iter + '_after'] === 'function') {
+    const value = this[iter + '_after'].call(this, data, args[0], key, ...args.slice(1));
+    if (value != null && value != data) data = value;
   }
   return data;
 });
@@ -488,16 +491,17 @@ export const Record = (<IRecord>Value.extends('Record'))
       diff += type.compare(from && from[name], to && to[name]);
     return diff;
   })
-  .setProperty('walk', function walk<A>(data: A, iterator: any, key: any, ...args: Array<any>): A {
+  .setProperty('walk', function walk<A>(data: A, iter: string, key: any, ...args: Array<any>): A {
     if (data == null) return null;
-    const _iterator = typeof iterator === 'string' ? this[iterator] : iterator;
-    if (typeof _iterator === 'function') {
-      const result = _iterator.call(this, data, args[0], key, ...args.slice(1));
-      if (result && result != data) data = result;
+    if (typeof this[iter] === 'function') {
+      const value = this[iter].call(this, data, args[0], key, ...args.slice(1));
+      if (value != null && value != data) data = value;
     }
-    for (const [name, { type }] of this._fields) {
-      if (!(name in data)) continue ;
-      data[name] = type.walk(data[name], iterator, name, ...args);
+    for (const [name, { type }] of this._fields)
+      data[name] = type.walk(data[name], iter, name, ...args);
+    if (typeof this[iter + '_after'] === 'function') {
+      const value = this[iter + '_after'].call(this, data, args[0], key, ...args.slice(1));
+      if (value != null && value != data) data = value;
     }
     return data;
   })
@@ -621,22 +625,22 @@ export const Sum = (<ISum>Value.extends('Sum'))
     if (to && to.$) return this._cases.get(to.$).compare(from, to);
     return 1;
   })
-  .setProperty('walk', function walk<A>(data: any, iterator: any, key: any, ...args: Array<any>): A {
+  .setProperty('walk', function walk<A>(data: any, iter: string, key: any, ...args: Array<any>): A {
     if (data == null) return null;
-    const _iterator = typeof iterator === 'string' ? this[iterator] : iterator;
-    if (typeof _iterator === 'function') {
-      const result = _iterator.call(this, data, args[0], key, ...args.slice(1));
-      if (typeof result === 'string') {
-        data.$ = result;
-        return this.type(result).walk(data, iterator, key, ...args);
-      } else if (result && result.$) {
-        return this.type(result.$).walk(result, iterator, key, ...args);
-      }
-    } else if (data && data.$ != null) {
-      return this.type(data.$).walk(data, iterator, key, ...args);
-    } else {
-      return null;
+    if (typeof this[iter] === 'function') {
+      const value = this[iter].call(this, data, args[0], key, ...args.slice(1));
+      if (typeof value === 'string') data.$ = value;
+      else if (value != null && typeof value.$ === 'string') data = value;
     }
+    if (typeof data.$ === 'string') {
+      const value = this.type(data.$).walk(data, iter, key, ...args);
+      if (value != null && value != data) data = value;
+    }
+    if (typeof this[iter + '_after'] === 'function') {
+      const value = this[iter + '_after'].call(this, data, args[0], key, ...args.slice(1));
+      if (value != null && value != data) data = value;
+    }
+    return data;
   })
   .addParser(function parseValue(value: any, warn?: warn) {
     if (typeof value === 'object' && this._cases.has(value.$)) {
