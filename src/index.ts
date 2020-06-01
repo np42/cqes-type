@@ -8,15 +8,15 @@ import { inspect }       from 'util';
 
 const _tag      = Symbol('cqes-type');
 
-export const _Boolean  = global.Boolean;
-export const _Number   = global.Number;
-export const _String   = global.String;
-export const _Function = global.Function;
-export const _Object   = global.Object;
-export const _Date     = global.Date;
-export const _Set      = global.Set;
-export const _Array    = global.Array;
-export const _Map      = global.Map;
+export const _Boolean  = globalThis.Boolean;
+export const _Number   = globalThis.Number;
+export const _String   = globalThis.String;
+export const _Function = globalThis.Function;
+export const _Object   = globalThis.Object;
+export const _Date     = globalThis.Date;
+export const _Set      = globalThis.Set;
+export const _Array    = globalThis.Array;
+export const _Map      = globalThis.Map;
 
 export type Typer     = { from(data: any): Typed };
 export type Typed     = any;
@@ -76,8 +76,8 @@ export function isType(Type: any) {
 
 // Value
 export interface IValue<A = any> {
-  (...types: Array<any>): this;
-  new ():                 A;
+  (...types: any[]):  this;
+  new ():             A;
 
   _default:     () => A;
   _rewriters:   Array<any>;
@@ -89,7 +89,6 @@ export interface IValue<A = any> {
   defineProperty(name: string, value: any, isGetter?: boolean): void;
 
   debug<T>(this: T):                                                     T;
-  type<X = this>():                                                      X;
   extends<T>(this: T, name: string):                                     T;
   clone<T>(this: T, fn?: (type: T) => void):                             T;
   of<T>(this: T, ...a: any[]):                                           T;
@@ -105,7 +104,7 @@ export interface IValue<A = any> {
   walk<X>(this: new (x?: A) => X, data: X, iter: string, key?: any, ...args: Array<any>): X;
 }
 
-export const Value = <IValue>function Value() {};
+export const Value = <IValue><unknown>function Value() {};
 
 tagCQESType(Value);
 
@@ -294,11 +293,11 @@ Value.defineProperty('compare', function compare(from: any, to: any) {
 Value.defineProperty('walk', function walk<A>(data: A, iter: string, key: any, ...args: Array<any>): A {
   if (typeof this[iter] === 'function') {
     const value = this[iter].call(this, data, args[0], key, ...args.slice(1));
-    if (value != null && value != data) data = value;
+    if (value !== undefined && value != data) data = value;
   }
   if (typeof this[iter + '_after'] === 'function') {
     const value = this[iter + '_after'].call(this, data, args[0], key, ...args.slice(1));
-    if (value != null && value != data) data = value;
+    if (value !== undefined && value != data) data = value;
   }
   return data;
 });
@@ -452,38 +451,27 @@ export const Enum = (<IEnum>Value.extends('Enum'))
     return null;
   });
 
-// Record
-export interface IRecord extends IValue<{ $?: string }> {
+// Object
+export interface IObject extends IValue<{ $: string }> {
   _fields:  Map<string, { type: IValue, postfill?: { filler: filler, enumerable: boolean } }>;
-  mayEmpty: this;
-
-  type<X>(field?: string): X;
 
   add<T>(this: T, field: string, type: any):                                    T;
-  remove<T>(this: T, field: string):                                            T;
-  keepFields<T>(this: T, ...fields: Array<string>):                             T;
   rewrite<T>(this: T, field: string, predicate: predicate<T>, value: any):      T;
   fixIf<T>(this: T, pattern: string | Function, handler: string | rewriter<T>): T;
   postfill<T>(this: T, field: string, filler: filler, enumerable?: boolean):    T;
 }
 
-export const Record = (<IRecord>Value.extends('Record'))
+export const Object = (<IObject>Value.extends('Object'))
   .setProperty('_fields', new _Map())
   .setProperty('of', function of(model: { [name: string]: any }) {
-    const record = this.clone();
+    const object = this.clone();
     for (const field in model) {
       if (model[field] instanceof _Array)
-        record._fields.set(field, { type: Value.of(...model[field]) });
+        object._fields.set(field, { type: Value.of(...model[field]) });
       else
-        record._fields.set(field, { type: Value.of(model[field]) });
+        object._fields.set(field, { type: Value.of(model[field]) });
     }
-    return record;
-  })
-  .setProperty('type', function type(field?: string): IValue {
-    if (!field) return this;
-    const offset = field.indexOf('.');
-    if (offset == -1) return this._fields.get(field).type;
-    else return this._fields.get(field.substring(0, offset)).type.type(field.substring(offset + 1));
+    return object;
   })
   .setProperty('compare', function compare(from: any, to: any) {
     let diff = 0;
@@ -492,48 +480,30 @@ export const Record = (<IRecord>Value.extends('Record'))
     return diff;
   })
   .setProperty('walk', function walk<A>(data: A, iter: string, key: any, ...args: Array<any>): A {
-    if (data == null) return null;
     if (typeof this[iter] === 'function') {
       const value = this[iter].call(this, data, args[0], key, ...args.slice(1));
-      if (value != null && value != data) data = value;
+      if (value !== undefined && value != data) data = value;
     }
+    if (data == null) return null;
+    data = { $: this.name, ...data };
     for (const [name, { type }] of this._fields)
       data[name] = type.walk(data[name], iter, name, ...args);
     if (typeof this[iter + '_after'] === 'function') {
       const value = this[iter + '_after'].call(this, data, args[0], key, ...args.slice(1));
-      if (value != null && value != data) data = value;
+      if (value !== undefined && value != data) data = value;
     }
     return data;
   })
   .setProperty('add', function add(field: string, type: any) {
-    return this.clone((record: IRecord) => {
-      record._fields.set(field, { type: Value.of(type) });
-    });
-  })
-  .setProperty('remove', function remove(field: string) {
-    return this.clone((record: IRecord) => {
-      record._fields.delete(field);
-    });
-  })
-  .setProperty('keepFields', function keepFields(...fields: Array<string>) {
-    return this.clone((record: IRecord) => {
-      const rest = [ ...fields ];
-      for (const field of record._fields.keys()) {
-        const offset = rest.indexOf(field);
-        if (offset > -1) {
-          rest.splice(offset, 1);
-        } else {
-          record._fields.delete(field);
-        }
-      }
-      if (rest.length > 0) throw new Error('Unable to keep fields' + rest);
+    return this.clone((object: IObject) => {
+      object._fields.set(field, { type: Value.of(type) });
     });
   })
   .setProperty('rewrite', function rewrite(field: string, predicate: any, value: any) {
-    return this.addRewriter((record: any) => {
-      if (record && predicate(record[field]))
-        record[field] = value;
-      return record;
+    return this.addRewriter((object: any) => {
+      if (object && predicate(object[field]))
+        object[field] = value;
+      return object;
     });
   })
   .setProperty('fixIf', function fixIf<T>(pattern: string | Function, handler: string | rewriter<T>) {
@@ -551,26 +521,21 @@ export const Record = (<IRecord>Value.extends('Record'))
     return this.addRewriter((input: any) => (<Function>pattern)(input) ? (<Function>handler)(input) : input);
   })
   .setProperty('postfill', function postfill(field: string, filler: filler, enumerable?: boolean) {
-    return this.clone((record: IRecord) => {
-      const child = record._fields.get(field);
+    return this.clone((object: IObject) => {
+      const child = object._fields.get(field);
       if (child == null) throw new Error('Require field: ' + field + ' to be already defined');
-      record._fields.set(field, { ...child, postfill: { filler, enumerable } });
+      object._fields.set(field, { ...child, postfill: { filler, enumerable } });
     });
   })
-  .setProperty('mayEmpty', function mayEmpty() {
-    return this.setDefault(() => ({}));
-  }, true)
-  .addParser(function parseRecord(data: any, warn?: warn) {
+  .addParser(function parseObject(data: any, warn?: warn) {
     const result = new this();
-    if ('$' in data) result.$ = data.$; // Keep it enumerable !!
+    result.$ = this.name;
     const fillers = <{ [name: string]: { type: IValue, postfill: filler, enumerable: boolean } }>{};
     for (const [name, { type, postfill }] of this._fields) {
       try {
-        const value = type.from(data[name], warn);
-        if (value != null) result[name] = value;
-        else if (postfill != null) {
+        result[name] = type.from(data[name], warn);
+        if (result[name] == null && postfill != null)
           fillers[name] = { type, postfill: postfill.filler, enumerable: !!postfill.enumerable };
-        }
       } catch (e) {
         if (postfill != null) continue ;
         const strval = JSON.stringify(data[name]);
@@ -583,7 +548,7 @@ export const Record = (<IRecord>Value.extends('Record'))
       try {
         value = postfill.call(this, result);
         value = type.from(value, warn);
-        if (value != null) Object.defineProperty(result, name, { value, enumerable, writable: true });
+        if (value != null) _Object.defineProperty(result, name, { value, enumerable, writable: true });
       } catch (e) {
         const strval = JSON.stringify(value);
         throw new TypeError('Failed on field: ' + name + ' = ' + strval, e);
@@ -591,56 +556,49 @@ export const Record = (<IRecord>Value.extends('Record'))
     }
     return result;
   })
-  .addConstraint(function isRecord(data: any) {
+  .addConstraint(function isObject(data: any) {
     if (typeof data != 'object') throw new TypeError('Require an object');
   });
 
 // Sum
 export interface ISum extends IValue<{ $: string }> {
-  _cases:        Map<string, IValue>;
+  _cases:        Map<string, IObject>;
   _defaultCase?: IValue;
   mayEmpty:      this;
-  type<X>(field?: string):                     X;
-  either<T>(this: T, hint: string, type: any): T;
+  either<T>(this: T, name: string, type: any): T;
 }
 
 export const Sum = (<ISum>Value.extends('Sum'))
   .setProperty('_cases', new _Map())
-  .setProperty('either', function either(hint: string, casetype: IValue) {
-    if (this._cases.has(hint)) throw new Error('this case already exists');
+  .setProperty('either', function either(name: string, casetype: IObject) {
+    if (this._cases.has(name)) throw new Error('this case already exists');
     return this.clone((type: ISum) => {
-      type._cases.set(hint, casetype)
+      type._cases.set(name, casetype)
     });
   })
   .setProperty('mayEmpty', function mayEmpty() {
     return this.setDefault(() => new class Undefined {});
   }, true)
-  .setProperty('type', function type(field: string) {
-    if (!field) return this;
-    const offset = field.indexOf('.');
-    if (offset == -1) return this._cases.get(field);
-    else return this._cases.get(field.substring(0, offset)).type(field.substring(offset + 1));
-  })
   .setProperty('compare', function compare(from: any, to: any) {
     if (to && to.$) return this._cases.get(to.$).compare(from, to);
     return 1;
   })
   .setProperty('walk', function walk<A>(data: any, iter: string, key: any, ...args: Array<any>): A {
-    if (data == null) return null;
+    if (data == null) data = <any>({ $: null });
     if (typeof this[iter] === 'function') {
       const value = this[iter].call(this, data, args[0], key, ...args.slice(1));
       if (typeof value === 'string') data.$ = value;
-      else if (value != null && typeof value.$ === 'string') data = value;
     }
-    if (typeof data.$ === 'string') {
-      const value = this.type(data.$).walk(data, iter, key, ...args);
-      if (value != null && value != data) data = value;
+    if (this._cases.has(data.$) && typeof data.$ === 'string') {
+      const value = this._cases.get(data.$).walk(data, iter, key, ...args);
+      if (value !== undefined && value != data) data = value;
     }
     if (typeof this[iter + '_after'] === 'function') {
       const value = this[iter + '_after'].call(this, data, args[0], key, ...args.slice(1));
-      if (value != null && value != data) data = value;
+      if (value !== undefined && value != data) data = value;
     }
-    return data;
+    if (data.$ != null) return data;
+    return null;
   })
   .addParser(function parseValue(value: any, warn?: warn) {
     if (typeof value === 'object' && this._cases.has(value.$)) {
@@ -653,28 +611,10 @@ export const Sum = (<ISum>Value.extends('Sum'))
 
 // Collection
 export interface ICollection<A> extends IValue<A> {
-  _subtype: IValue;
   notEmpty: this;
-
-  type<X>(field?: string): X;
 }
 
 export const Collection = (<ICollection<any>>Value.extends('Collection'))
-  .setProperty('_subtype', null)
-  .setProperty('type', function type(field?: string) {
-    if (!field) return this;
-    const offset = field.indexOf('.');
-    if (offset == -1) {
-      switch (field) {
-      case 'value': return this._subtype;
-      default :     return null;
-      }
-    } else {
-      const key = field.substring(0, offset);
-      if (key === 'value') return this._subtype.type(field.substring(offset + 1));
-      return null;
-    }
-  })
   .setProperty('notEmpty', function notEmpty() {
     throw new Error('Not implemented');
   }, true)
@@ -683,6 +623,7 @@ export const Collection = (<ICollection<any>>Value.extends('Collection'))
 // Set
 export interface ISet extends ICollection<Set<any>> {
   _constructor: { new (): Set<any> };
+  _subtype: IValue;
   from<X>(this: new () => X, data: Set<any> | Array<any>, warn?: warn): X;
   has(source: Set<any>, value: any): boolean;
   compare(from: Set<any>, to: Set<any>): number;
@@ -693,6 +634,7 @@ export const Set = (<ISet>Collection.extends('Set'))
   .setProperty('_constructor', function () {
     return makeCollectionConstructor(this.name, _Set);
   }, true)
+  .setProperty('_subtype', null)
   .setProperty('of', function (type: any) {
     return this.clone((value: ISet) => value._subtype = Value.of(type));
   })
@@ -760,6 +702,7 @@ export const Set = (<ISet>Collection.extends('Set'))
 // Array
 export interface IArray extends ICollection<Array<any>> {
   _constructor: { new (): Array<any> };
+  _subtype: IValue;
   compare(from: Array<any>, to: Array<any>): number;
 }
 
@@ -767,6 +710,7 @@ export const Array = (<IArray>Collection.extends('Array'))
   .setProperty('_constructor', function () {
     return makeCollectionConstructor(this.name, _Array);
   }, true)
+  .setProperty('_subtype', null)
   .setProperty('_default', function () {
     return new _Array();
   })
@@ -807,13 +751,14 @@ export const Array = (<IArray>Collection.extends('Array'))
     if (!(data instanceof _Array)) throw new TypeError('Require an Array');
   });
 
+
 // Map
 export interface IMap extends ICollection<Map<any, any>> {
   _constructor: { new (): Map<any, any> };
-  _index: IValue;
+  _index:   IValue;
+  _subtype: IValue;
   toJSON: (this: Map<any, any>) => any;
 
-  type<X>(field?: string): X;
   compare(from: Map<any, any>, to: Map<any, any>): number;
 }
 
@@ -822,6 +767,7 @@ export const Map = (<IMap>Collection.extends('Map'))
     return makeCollectionConstructor(this.name, _Map);
   }, true)
   .setProperty('_index', null)
+  .setProperty('_subtype', null)
   .setProperty('_default', function () {
     const map = new _Map();
     _Object.defineProperty(map, 'toJSON', { value: this.toJSON });
@@ -840,24 +786,6 @@ export const Map = (<IMap>Collection.extends('Map'))
       value._index = Value.of(index);
       value._subtype = Value.of(type);
     });
-  })
-  .setProperty('type', function type(field?: string) {
-    if (!field) return this;
-    const offset = field.indexOf('.');
-    if (offset == -1) {
-      switch (field) {
-      case 'key':   return this._index;
-      case 'value': return this._subtype;
-      default :     return null;
-      }
-    } else {
-      const key = field.substring(0, offset);
-      switch (field) {
-      case 'key':   return this._index.type(field.substring(offset + 1));
-      case 'value': return this._subtype.type(field.substring(offset + 1));
-      default :     return null;
-      }
-    }
   })
   .setProperty('get', function get(source: Map<any, any>, key: any) {
     if (source.has(key)) return source.get(key);
@@ -907,6 +835,99 @@ export const Map = (<IMap>Collection.extends('Map'))
   })
   .addConstraint(function isMap(data: any) {
     if (!(data instanceof _Map)) throw new TypeError('Require a Map');
+  });
+
+// Record
+export interface IRecord extends ICollection<{ [name: string]: any }> {
+  _constructor: { new (): { [name: string]: any } };
+  _members:  Map<string, { type: IValue, postfill?: { filler: filler, enumerable: boolean } }>;
+  mayEmpty: this;
+  compare(from: Map<any, any>, to: Map<any, any>): number;
+  add<T>(this: T, field: string, type: any): T;
+  remove<T>(this: T, field: string):         T;
+  postfill<T>(this: T, field: string, filler: filler, enumerable?: boolean): T;
+}
+
+export const Record = (<IRecord>Collection.extends('Record'))
+  .setProperty('_constructor', function () {
+    return makeCollectionConstructor(this.name, _Object);
+  }, true)
+  .setProperty('_members', new _Map())
+  .setProperty('mayEmpty', function mayEmpty() {
+    return this.setDefault(() => {});
+  }, true)
+  .setProperty('compare', function compare(from: any, to: any) {
+    throw new Error('TODO: Implement me');
+  })
+  .setProperty('walk', function walk<A>(data: A, iter: string, key: any, ...args: Array<any>): A {
+    if (data == null) data = <any>({});
+    if (typeof this[iter] === 'function') {
+      const value = this[iter].call(this, data, args[0], key, ...args.slice(1));
+      if (value !== undefined && value != data) data = value;
+    }
+    for (const [name, { type }] of this._members) {
+      const result = type.walk(data[name], iter, name, ...args);
+      if (result === undefined) continue ;
+      data[name] = result;
+    }
+    if (typeof this[iter + '_after'] === 'function') {
+      const value = this[iter + '_after'].call(this, data, args[0], key, ...args.slice(1));
+      if (value !== undefined && value != data) data = value;
+    }
+    // Has any key
+    for (const any in data) return data;
+    return null;
+  })
+  .setProperty('add', function add(field: string, type: any) {
+    return this.clone((object: IRecord) => {
+      object._members.set(field, { type: Value.of(type) });
+    });
+  })
+  .setProperty('remove', function add(field: string) {
+    return this.clone((object: IRecord) => {
+      object._members.delete(field);
+    });
+  })
+  .setProperty('postfill', function postfill(field: string, filler: filler, enumerable?: boolean) {
+    return this.clone((object: IRecord) => {
+      const child = object._members.get(field);
+      if (child == null) throw new Error('Require field: ' + field + ' to be already defined');
+      object._members.set(field, { ...child, postfill: { filler, enumerable } });
+    });
+  })
+  .addParser(function parseRecord(data: any, warn?: warn) {
+    const result = {};
+    const fillers = <{ [name: string]: { type: IValue, postfill: filler, enumerable: boolean } }>{};
+    for (const [name, { type, postfill }] of this._members) {
+      try {
+        const value = type.from(data[name], warn);
+        if (value != null)
+          result[name] = value;
+        else if (postfill != null)
+          fillers[name] = { type, postfill: postfill.filler, enumerable: !!postfill.enumerable };
+      } catch (e) {
+        if (postfill != null) continue ;
+        const strval = JSON.stringify(data[name]);
+        throw new TypeError('Failed on field: ' + name + ' = ' + strval, e);
+      }
+    }
+    for (const name in fillers) {
+      const { type, postfill, enumerable } = fillers[name];
+      let value = null;
+      try {
+        value = postfill.call(this, result);
+        value = type.from(value, warn);
+        if (value != null) _Object.defineProperty(result, name, { value, enumerable, writable: true });
+      } catch (e) {
+        const strval = JSON.stringify(value);
+        throw new TypeError('Failed on field: ' + name + ' = ' + strval, e);
+      }
+    }
+    return result;
+  })
+  .addConstraint(function isObject(data: any) {
+    for (const key in data) return ;
+    throw new Error('Empty Record');
   });
 
 // ------------------------------------------
@@ -998,23 +1019,4 @@ export const DateTime = (<IDateTime>Value.extends('DateTime'))
     if (value.toString() === 'Invalid Date') throw new TypeError('Invalid date format');
   });
 
-
-//---------------------------
-
-/*
-// GPSPoint
-export interface IGPSPoint extends IRecord {}
-
-export const _GPSPoint = <IGPSPoint>Record.extends(function GPSPoint() {})
-  .add('longitude', _Number)
-  .add('latitude', _Number);
-
-
-// Distance
-export interface IDistance extends IRecord {}
-
-export const _Distance = <IDistance>Record.extends(function Distance() {})
-  .add('value', _Number)
-  .add('unit', Enum.of('m', 'km'));
-*/
 
