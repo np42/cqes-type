@@ -586,7 +586,7 @@ export const Sum = (<ISum>Value.extends('Sum'))
   .setProperty('walk', function walk<A>(data: any, iter: string, key: any, ...args: Array<any>): A {
     if (data == null) data = <any>({ $: null });
     if (typeof this[iter] === 'function') {
-      const value = this[iter].call(this, data, args[0], key, ...args.slice(1));
+      const value = this[iter].call(this, data.$, args[0], key, ...args.slice(1));
       if (typeof value === 'string') data.$ = value;
     }
     if (this._cases.has(data.$) && typeof data.$ === 'string') {
@@ -837,12 +837,66 @@ export const Map = (<IMap>Collection.extends('Map'))
     if (!(data instanceof _Map)) throw new TypeError('Require a Map');
   });
 
+// Tuple
+export interface ITuple extends ICollection<any[]> {
+  _constructor: { new (): any[] };
+  _types: Array<IValue>;
+  compare(from: any[], to: any[]): number;
+}
+
+export const Tuple = (<ITuple>Collection.extends('Tuple'))
+  .setProperty('_constructor', function () {
+    return makeCollectionConstructor(this.name, _Array);
+  }, true)
+  .setProperty('_types', new _Array())
+  .setProperty('of', function (...types: Array<any>) {
+    return this.clone((value: ITuple) => {
+      value._types = types.map(T => Value.of(T));
+    });
+  })
+  .setProperty('compare', function compare(from: any, to: any) {
+    throw new Error('TODO: Implement me');
+  })
+  .setProperty('walk', function walk<A>(data: A, iter: string, key: any, ...args: Array<any>): A {
+    if (typeof this[iter] === 'function') {
+      const value = this[iter].call(this, data, args[0], key, ...args.slice(1));
+      if (value !== undefined && value != data) data = value;
+    }
+    if (data == null) return null;
+    for (let i = 0; i < this._types.length; i += 1) {
+      const result = this._types[i].walk(data[i], iter, i, ...args);
+      if (result === undefined) continue ;
+      data[i] = result;
+    }
+    if (typeof this[iter + '_after'] === 'function') {
+      const value = this[iter + '_after'].call(this, data, args[0], key, ...args.slice(1));
+      if (value !== undefined && value != data) data = value;
+    }
+    return data;
+  })
+  .addParser(function parseRecord(data: any, warn?: warn) {
+    const result = new _Array(this._types.length);
+    if (data == null) data = [];
+    for (let i = 0; i < this._types.length; i += 1) {
+      try {
+        const type = this._types[i];
+        const value = type.from(data[i], warn);
+        if (value != null) result[i] = value;
+      } catch (e) {
+        const strval = JSON.stringify(data[i]);
+        throw new TypeError('Failed on field: ' + i + ' = ' + strval, e);
+      }
+    }
+    return result;
+  })
+;
+
 // Record
 export interface IRecord extends ICollection<{ [name: string]: any }> {
   _constructor: { new (): { [name: string]: any } };
   _members:  Map<string, { type: IValue, postfill?: { filler: filler, enumerable: boolean } }>;
   mayEmpty: this;
-  compare(from: Map<any, any>, to: Map<any, any>): number;
+  compare(from: { [name: string]: any }, to: { [name: string]: any }): number;
   add<T>(this: T, field: string, type: any): T;
   remove<T>(this: T, field: string):         T;
   postfill<T>(this: T, field: string, filler: filler, enumerable?: boolean): T;
@@ -896,7 +950,7 @@ export const Record = (<IRecord>Collection.extends('Record'))
     });
   })
   .addParser(function parseRecord(data: any, warn?: warn) {
-    const result = {};
+    const result = new this();
     const fillers = <{ [name: string]: { type: IValue, postfill: filler, enumerable: boolean } }>{};
     for (const [name, { type, postfill }] of this._members) {
       try {
