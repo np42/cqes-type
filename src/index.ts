@@ -74,6 +74,12 @@ export function isType(Type: any) {
   return !!(Type && Type[_tag]);
 }
 
+const toStringMethodProperty = { configurable: true, writable: true, enumerable: false, value: function () {
+  if (this.constructor.toString !== _Object.prototype.toString) return this.constructor.toString(this);
+  return _Object.prototype.toString.call(this);
+} };
+
+
 // Value
 export interface IValue<A = any> {
   (...types: any[]):  this;
@@ -529,6 +535,7 @@ export const Object = (<IObject>Value.extends('Object'))
   })
   .addParser(function parseObject(data: any, warn?: warn) {
     const result = new this();
+    _Object.defineProperty(result, 'toString', toStringMethodProperty);
     result.$ = this.name;
     const fillers = <{ [name: string]: { type: IValue, postfill: filler, enumerable: boolean } }>{};
     for (const [name, { type, postfill }] of this._fields) {
@@ -951,6 +958,7 @@ export const Record = (<IRecord>Collection.extends('Record'))
   })
   .addParser(function parseRecord(data: any, warn?: warn) {
     const result = new this();
+    _Object.defineProperty(result, 'toString', toStringMethodProperty);
     const fillers = <{ [name: string]: { type: IValue, postfill: filler, enumerable: boolean } }>{};
     for (const [name, { type, postfill }] of this._members) {
       try {

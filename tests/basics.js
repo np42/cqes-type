@@ -35,9 +35,33 @@ describe('Object', function () {
     });
   });
 
+  describe('toString', function () {
+    it('should has custom toString function', function () {
+      class T extends Object.add('field', String) {
+        static toString(data) {
+          return data.field.slice(0, 4) + "'" + data.field.slice(4);
+        }
+      }
+      assert.equal(T.from({ field: 'hello' }), "hell'o");
+    });
+  });
+
 });
 
 describe('Sum', function () {
+
+  describe('toString', function () {
+    it('should has custom toString function', function () {
+      class T extends Object.add('field', String) {
+        static toString(data) { return data.field.slice(0, 4) + "'" + data.field.slice(4); }
+      }
+      class U extends Object.add('foo', Number) {
+        static toString(data) { return data.foo + 1; }
+      }
+      class S extends Sum.either('U', U).either('T', T) {};
+      assert.equal(S.from({ $: 'T', field: 'hello' }), "hell'o");
+    });
+  });
 
 });
 
