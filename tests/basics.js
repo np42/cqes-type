@@ -1,4 +1,5 @@
 const { Record, Map, Array, Set, Sum, Object, Enum, String, Number, Boolean, Value
+      , Date, Time, DateTime
       }      = require('..');
 const assert = require('assert');
 
@@ -15,6 +16,17 @@ describe('Number', function () {
 });
 
 describe('String', function () {
+
+});
+
+describe('DateTime', function () {
+
+  describe('Invalid Date', function () {
+    it('should return null', function () {
+      const T = DateTime.mayNull;
+      assert.equal(T.from(undefined), null);
+    });
+  });
 
 });
 
