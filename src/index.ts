@@ -18,7 +18,7 @@ export const _Set      = globalThis.Set;
 export const _Array    = globalThis.Array;
 export const _Map      = globalThis.Map;
 
-export type Typer     = { from(data: any): Typed };
+export type Typer     = { from(data: any): Typed, name: string };
 export type Typed     = any;
 
 export class TypeError extends Error {
@@ -70,7 +70,7 @@ const tagCQESType = (Type: any) => {
   _Object.defineProperty(Type, _tag, { value: true, enumerable: false, writable: false });
 }
 
-export function isType(Type: any) {
+export function isType(Type: any): Type is Typer {
   return !!(Type && Type[_tag]);
 }
 
@@ -211,7 +211,7 @@ Value.defineProperty('setProperty', function setProperty(name: string, value: an
 Value.defineProperty('setDefault', function setDefault(defaultValue: any) {
   return this.clone((type: IValue) => {
     if (isType(defaultValue)) {
-      type._default = () => defaultValue.default();
+      type._default = () => (<IValue>defaultValue)._default();
     } else if (isConstructor(defaultValue)) {
       type._default = () => new defaultValue();
     } else if (typeof defaultValue === 'function') {
@@ -989,6 +989,7 @@ export const Record = (<IRecord>Collection.extends('Record'))
   })
   .addConstraint(function isObject(data: any) {
     for (const key in data) return ;
+    if (this._members.size === 0) return ;
     throw new Error('Empty Record');
   });
 
