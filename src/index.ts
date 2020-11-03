@@ -105,7 +105,7 @@ export interface IValue<A = any> {
   setDefault<T>(this: T, fn: any):                                       T;
   mayNull:                                                               this;
 
-  from<X>(this: new (input?: A) => X, data: A, warn?: warn): X;
+  from<X>(this: new (input?: A) => X, data?: A, warn?: warn): X;
   compare(from: any, to: any): number;
   walk<X>(this: new (x?: A) => X, data: X, iter: string, key?: any, ...args: Array<any>): X;
 }
@@ -259,7 +259,7 @@ Value.defineProperty('addConstraint', function addConstraint<T>(constraint: cons
   });
 });
 
-Value.defineProperty('from', function from(value: any, warn?: warn) {
+Value.defineProperty('from', function from(value?: any, warn?: warn) {
   if (this._debug) debugger;
   if (value instanceof this) return value;
   for (let i = 0; i < this._rewriters.length; i += 1)
