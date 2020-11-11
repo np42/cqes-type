@@ -28,6 +28,12 @@ describe('DateTime', function () {
     });
   });
 
+  describe('DateTime without second', function () {
+    it('should parse type', function () {
+      assert.equal(DateTime.from('2020-11-10T12:45Z').toISOString(), '2020-11-10T12:45:00.000Z');
+    });
+  });
+
 });
 
 describe('Enum', function () {

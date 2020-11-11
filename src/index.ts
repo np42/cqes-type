@@ -18,7 +18,7 @@ export const _Set      = globalThis.Set;
 export const _Array    = globalThis.Array;
 export const _Map      = globalThis.Map;
 
-export type Typer     = { from(data: any): Typed, name: string };
+export type Typer     = { from(data: any, warn?: warn): Typed, name: string };
 export type Typed     = any;
 
 export class TypeError extends Error {
@@ -580,7 +580,7 @@ export const Sum = (<ISum>Value.extends('Sum'))
   .setProperty('either', function either(name: string, casetype: IObject) {
     if (this._cases.has(name)) throw new Error('this case already exists');
     return this.clone((type: ISum) => {
-      type._cases.set(name, casetype)
+      type._cases.set(name, casetype);
     });
   })
   .setProperty('mayEmpty', function mayEmpty() {
@@ -609,7 +609,9 @@ export const Sum = (<ISum>Value.extends('Sum'))
   })
   .addParser(function parseValue(value: any, warn?: warn) {
     if (typeof value === 'object' && this._cases.has(value.$)) {
-      return this._cases.get(value.$).from(value, warn);
+      const Type: any = this._cases.get(value.$);
+      if (isType(Type)) return Type.from(value, warn);
+      else return Type().from(value, warn);
     } else if (this._defaultCase != null) {
       return this._defaultCase.from(value, warn);
     }
