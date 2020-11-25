@@ -70,8 +70,10 @@ const tagCQESType = (Type: any) => {
   _Object.defineProperty(Type, _tag, { value: true, enumerable: false, writable: false });
 }
 
-export function isType(Type: any): Type is Typer {
-  return !!(Type && Type[_tag]);
+export function isType(Type: any, name?: string): Type is Typer {
+  if (!(Type && Type[_tag])) return false;
+  if (name == null) return true;
+  return Type.name === name;
 }
 
 const toStringMethodProperty = { configurable: true, writable: true, enumerable: false, value: function () {
@@ -754,6 +756,16 @@ export const Array = (<IArray>Collection.extends('Array'))
         throw new TypeError('Failed on index: ' + i + ' = ' + strval, e);
       }
     }
+    return array;
+  })
+  .addParser(function parseArray(data: any, warn?: warn) {
+    if (typeof data !== 'string') return ;
+    const array = new this._constructor();
+    const insert = (entries: Array<string>) => array.splice(0, 0, ...entries.map(x => this._subtype.from(x)))
+    if (/\r?\n/.test(data))    insert(data.split(/\r?\n/));
+    else if (/[,]/.test(data)) insert(data.split(/,\s*/));
+    else if (/[:]/.test(data)) insert(data.split(/:/));
+    else if (/\s/.test(data))  insert(data.split(/\s+/));
     return array;
   })
   .addConstraint(function isArray(data: any) {
