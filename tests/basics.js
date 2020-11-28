@@ -1,5 +1,5 @@
-const { Record, Map, Array, Set, Sum, Object, Enum, String, Number, Boolean, Value
-      , Date, Time, DateTime
+const { Record, Map, Array, Set, Sum, Object, Enum, String, Number, Boolean, Value, Date, Time, DateTime
+      , _Date, _Array, _Set, _Map
       }      = require('..');
 const assert = require('assert');
 
@@ -37,6 +37,27 @@ describe('DateTime', function () {
 });
 
 describe('Enum', function () {
+  const T = Enum.as('A').as('B');
+
+  describe('from', function () {
+    it('should return value when in range', function () {
+      assert.equal(T.from('B'), 'B');
+    });
+    it('should return default when empty', function () {
+      assert.equal(T.from(), 'A');
+    });
+    it('should return default when blank', function () {
+      assert.equal(T.from(' '), 'A');
+    });
+    it('should throw an error when other value', function () {
+      try { T.from('C'); }
+      catch (e) { return ; }
+      throw new Error('Expected an error');
+    });
+    it('should return null when other value with mayNull', function () {
+      assert.equal(T.mayNull.from('C'), null);
+    });
+  });
 
 });
 
@@ -85,9 +106,23 @@ describe('Sum', function () {
 
 describe('Set', function () {
 
+  describe('subtype', function () {
+    it('should accept getter function', function () {
+      const T = Set(() => Toto);
+      class Toto extends Number {};
+      assert.deepEqual(T.from(['42']), new _Set([42]));
+    });
+  });
+
 });
 
 describe('Array', function () {
+
+  describe('subtype', function () {
+    it('should accept getter function', function () {
+      assert.deepEqual(Array(() => Number).from(['42']), [42]);
+    });
+  });
 
 });
 

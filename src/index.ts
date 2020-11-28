@@ -1,5 +1,6 @@
 import { v4 as uuid }    from 'uuid';
-import { isConstructor } from 'cqes-util';
+import { isConstructor, isLambda
+       } from 'cqes-util';
 import { inspect }       from 'util';
 
 // TODO:
@@ -76,6 +77,12 @@ export function isType(Type: any, name?: string): Type is Typer {
   return Type.name === name;
 }
 
+export function getType(value: any): IValue {
+  if (isType(value)) return <any>value;
+  if (isLambda(value)) return value();
+  return Value;
+}
+
 const toStringMethodProperty = { configurable: true, writable: true, enumerable: false, value: function () {
   if (this.constructor.toString !== _Object.prototype.toString) return this.constructor.toString(this);
   return _Object.prototype.toString.call(this);
@@ -87,7 +94,7 @@ export interface IValue<A = any> {
   (...types: any[]):  this;
   new ():             A;
 
-  _default:     () => A;
+  _default:     (input?: any) => A;
   _rewriters:   Array<any>;
   _parsers:     Array<any>;
   _assertions:  Array<any>;
@@ -267,8 +274,8 @@ Value.defineProperty('from', function from(value?: any, warn?: warn) {
   for (let i = 0; i < this._rewriters.length; i += 1)
     value = this._rewriters[i].call(this, value);
   if (value == null) {
-    if (this._default != null) value = this._default();
-    else throw new TypeError('Mandatory value is missing');
+    if (this._default != null) value = this._default(value);
+    else throw new TypeError('Mandatory value is missing, no default defined');
     if (value === null) return null;
   }
   try {
@@ -285,7 +292,7 @@ Value.defineProperty('from', function from(value?: any, warn?: warn) {
     if (this._default == null) throw e;
     else if (warn != null) warn(e);
     const message = e.toString().split('\n').pop().substr(7);
-    value = this._default();
+    value = this._default(value);
   }
   return value;
 });
@@ -410,6 +417,7 @@ export interface IEnum extends IValue<String> {
   _strTests:  { [key: string]: any };
   _sensitive: boolean;
   _notrim:    boolean;
+  _first:     null;
   strict:     this;
   as<T>(this: T, value: any, ...tests: Array<any>): T;
 }
@@ -418,15 +426,33 @@ export const Enum = (<IEnum>Value.extends('Enum'))
   .setProperty('_iterTests', [])
   .setProperty('_strTests',  {})
   .setProperty('_sensitive', false)
-  .setProperty('_notrim', false)
+  .setProperty('_notrim',    false)
+  .setProperty('_first',     null)
+  .setProperty('_default', function (value: any) {
+    if (value == null) return this._first;
+    for (const parser of this._parsers)
+      if (parser.call(this, value) != null)
+        return this._first;
+    throw new Error('Given value: "' + value + '" is not in Enum');
+  })
   .setProperty('strict', function sensitive() {
     return this.clone((type: IEnum) => {
       type._sensitive = true;
       type._notrim = true;
     });
   }, true)
+  .setProperty('mayNull', function () {
+    const _default = this._default;
+    return this.clone((type: IEnum) => {
+      type._default = function (value: any) {
+        try { return _default(value); }
+        catch (e) { return null; }
+      };
+    });
+  }, true)
   .setProperty('as', function addCase(...tests: Array<any>) {
     const value = tests[0];
+    if (this._first == null) this._first = value;
     return this.clone((type: IEnum) => {
       for (const test of tests) {
         switch (typeof test) {
@@ -453,11 +479,18 @@ export const Enum = (<IEnum>Value.extends('Enum'))
     for (const [match, value] of this._iterTests)
       if (match(search))
         return value;
-    if (this._strTests[input] != null)
-      return this._strTests[input];
-    if (search) return input;
+    if (this._strTests[search] != null)
+      return this._strTests[search];
+    if (/^\s*$/.test(search)) return this._first;
     return null;
+  })
+  .addConstraint(function mustBeInRange(value: any) {
+    for (const parser of this._parsers)
+      if (parser.call(this, value) != null)
+        return ;
+    throw new Error('Value is not in Enum');
   });
+
 
 // Object
 export interface IObject extends IValue<{ $: string }> {
@@ -647,7 +680,7 @@ export const Set = (<ISet>Collection.extends('Set'))
   }, true)
   .setProperty('_subtype', null)
   .setProperty('of', function (type: any) {
-    return this.clone((value: ISet) => value._subtype = Value.of(type));
+    return this.clone((value: ISet) => { value._subtype = type });
   })
   .setProperty('toJSON', function toJSON() {
     return _Array.from(this);
@@ -664,24 +697,26 @@ export const Set = (<ISet>Collection.extends('Set'))
   }, true)
   .setProperty('has', function has(source: Set<any>, value: any) {
     if (source.has(value)) return true;
+    const subtype = getType(this._subtype);
     for (const item of source) {
-      if (this._subtype.diff(value, item)) continue ;
+      if (subtype.compare(value, item) !== 0) continue ;
       return true;
     }
     return false;
   })
   .setProperty('compare', function compare(from: any, to: any) {
     let diff = 0;
+    const subtype = getType(this._subtype);
     if (from) {
       for (const item of from) {
         if (this.has(to, item)) continue ;
-        diff += this._subtype.compare(item, null);
+        diff += subtype.compare(item, null);
       }
     }
     if (to) {
       for (const item of to) {
         if (this.has(from, item)) continue ;
-        diff += this._subtype.compare(null, item);
+        diff += subtype.compare(null, item);
       }
     }
     return diff;
@@ -689,10 +724,11 @@ export const Set = (<ISet>Collection.extends('Set'))
   .setProperty('walk', function walk<A>(data: any, iterator: string, key: any, ...args: Array<any>): A {
     if (data == null) return null;
     const copy = new _Set(data || []);
+    const subtype = getType(this._subtype);
     data.clear();
     let i = 0;
     for (const item of copy) {
-      data.add(this._subtype.walk(item, iterator, i, ...args));
+      data.add(subtype.walk(item, iterator, i, ...args));
       i += 1;
     }
     return data;
@@ -700,8 +736,9 @@ export const Set = (<ISet>Collection.extends('Set'))
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array || data instanceof _Set)) return ;
     const set = new this._constructor();
+    const subtype = getType(this._subtype);
     for (const value of data)
-      set.add(this._subtype.from(value, warn));
+      set.add(subtype.from(value, warn));
     _Object.defineProperty(set, 'toJSON', { value: this.toJSON });
     return set;
   })
@@ -726,7 +763,7 @@ export const Array = (<IArray>Collection.extends('Array'))
     return new _Array();
   })
   .setProperty('of', function (type: any) {
-    return this.clone((value: IArray) => value._subtype = Value.of(type));
+    return this.clone((value: IArray) => value._subtype = type);
   })
   .setProperty('notEmpty', function notEmpty() {
     return this.addConstraint(function notEmpty(value: any) {
@@ -736,21 +773,24 @@ export const Array = (<IArray>Collection.extends('Array'))
   .setProperty('compare', function compare(from: any, to: any) {
     const length = Math.max(from.length, to.length);
     let diff = 0;
+    const subtype = getType(this._subtype);
     for (let i = 0; i < length; i += 1)
-      diff += this._subtype.compare(from[i], to[i]);
+      diff += subtype.compare(from[i], to[i]);
     return diff;
   })
   .setProperty('walk', function walk<A>(data: any, iterator: string, key: any, ...args: Array<any>): A {
     if (data == null) return null;
+    const subtype = getType(this._subtype);
     for (let i = 0; i < data.length; i += 1)
-      data[i] = this._subtype.walk(data[i], iterator, i, ...args);
+      data[i] = subtype.walk(data[i], iterator, i, ...args);
     return data;
   })
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array)) return ;
     const array = new this._constructor();
     for (let i = 0; i < data.length; i += 1) {
-      try { array[i] = this._subtype.from(data[i], warn); }
+      const subtype = getType(this._subtype);
+      try { array[i] = subtype.from(data[i], warn); }
       catch (e) {
         const strval = JSON.stringify(data[i]);
         throw new TypeError('Failed on index: ' + i + ' = ' + strval, e);
@@ -761,7 +801,8 @@ export const Array = (<IArray>Collection.extends('Array'))
   .addParser(function parseArray(data: any, warn?: warn) {
     if (typeof data !== 'string') return ;
     const array = new this._constructor();
-    const insert = (entries: Array<string>) => array.splice(0, 0, ...entries.map(x => this._subtype.from(x)))
+    const subtype = getType(this._subtype);
+    const insert = (entries: Array<string>) => array.splice(0, 0, ...entries.map(x => subtype.from(x)))
     if (/\r?\n/.test(data))    insert(data.split(/\r?\n/));
     else if (/[,]/.test(data)) insert(data.split(/,\s*/));
     else if (/[:]/.test(data)) insert(data.split(/:/));
@@ -804,8 +845,8 @@ export const Map = (<IMap>Collection.extends('Map'))
   }, true)
   .setProperty('of', function (index: any, type: any) {
     return this.clone((value: IMap) => {
-      value._index = Value.of(index);
-      value._subtype = Value.of(type);
+      value._index = index;
+      value._subtype = type;
     });
   })
   .setProperty('get', function get(source: Map<any, any>, key: any) {
@@ -818,33 +859,37 @@ export const Map = (<IMap>Collection.extends('Map'))
   })
   .setProperty('compare', function compare(from: any, to: any) {
     const done = new Set();
+    const subtype = getType(this._subtype);
     let diff = 0;
     if (from) {
       for (const [key, value] of from) {
         const otherValue = this.get(to, key);
-        diff += this._subtype.compare(value, otherValue);
+        diff += subtype.compare(value, otherValue);
         if (otherValue != null) done.add(otherValue);
       }
     }
     if (to) {
       for (const [key, value] of to) {
         if (done.has(value)) continue ;
-        diff += this._subtype.compare(null, value);
+        diff += subtype.compare(null, value);
       }
     }
     return diff;
   })
   .setProperty('walk', function walk<A>(data: any, iterator: string, key: any, ...args: Array<any>): A {
     if (data == null) return null;
+    const subtype = getType(this._subtype);
     for (const [key, value] of data)
-      data.set(key, this._subtype.walk(value, iterator, key, ...args));
+      data.set(key, subtype.walk(value, iterator, key, ...args));
     return data;
   })
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array || data instanceof _Map)) return ;
     const map = new this._constructor();
+    const subtype = getType(this._subtype);
+    const indexType = getType(this._index);
     for (const [key, value] of data) {
-      try { map.set(this._index.from(key, warn), this._subtype.from(value, warn)); }
+      try { map.set(indexType.from(key, warn), subtype.from(value, warn)); }
       catch (e) {
         const strkey = JSON.stringify(key);
         const strval = JSON.stringify(value);
@@ -1088,7 +1133,8 @@ export const DateTime = (<IDateTime>Value.extends('DateTime'))
   })
   .addParser(function parseString(value: string) {
     if (typeof value !== 'string') return ;
-    const date = /^\d{4}(-\d\d){2}( |T)(\d\d)(:\d\d){2}(\.\d{3})?(Z|[+\-]\d+)?$/.exec(value);
+    const date = /^\d{4}(-\d\d){2}( |T)(\d\d)([:hH]\d\d){2}([\.sS]\d{3})?(Z|[+\-]\d+)?$/.exec(value);
+    // FIXME: date variable is not used !?
     return new _Date(value);
   })
   .addConstraint(function isDate(value: Date) {
