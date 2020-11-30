@@ -188,7 +188,16 @@ Value.defineProperty('extends', function extend(name: string) {
         case '[object Array]': { value[key] = _Array.from(property.value); } break ;
         case '[object Set]':   { value[key] = new _Set(property.value); } break ;
         case '[object Map]':   { value[key] = new _Map(property.value); } break ;
-        default: { _Object.defineProperty(value, key, property); } break ;
+        default: {
+          if (property.value === null) {
+            _Object.defineProperty(value, key, property);
+          } else if (property.value.constructor === _Object) {
+            _Object.defineProperty(value, key, { ...property, value: { ...property.value } });
+          } else {
+            // Custom Object, don't know how to clone it
+            _Object.defineProperty(value, key, property);
+          }
+        } break ;
         }
       } else {
         _Object.defineProperty(value, key, property);
@@ -452,8 +461,8 @@ export const Enum = (<IEnum>Value.extends('Enum'))
   }, true)
   .setProperty('as', function addCase(...tests: Array<any>) {
     const value = tests[0];
-    if (this._first == null) this._first = value;
     return this.clone((type: IEnum) => {
+      if (type._first == null) type._first = value;
       for (const test of tests) {
         switch (typeof test) {
         case 'number': { type._strTests[_String(test)] = value; } break ;
@@ -465,7 +474,7 @@ export const Enum = (<IEnum>Value.extends('Enum'))
         } break ;
         }
       }
-    })
+    });
   })
   .addParser(function parseValue(input: any) {
     let search = input;
@@ -481,7 +490,7 @@ export const Enum = (<IEnum>Value.extends('Enum'))
         return value;
     if (this._strTests[search] != null)
       return this._strTests[search];
-    if (/^\s*$/.test(search)) return this._first;
+    if (/^\s*$/.test(search)) return this._default();
     return null;
   })
   .addConstraint(function mustBeInRange(value: any) {

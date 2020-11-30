@@ -54,8 +54,30 @@ describe('Enum', function () {
       catch (e) { return ; }
       throw new Error('Expected an error');
     });
-    it('should return null when other value with mayNull', function () {
-      assert.equal(T.mayNull.from('C'), null);
+
+    describe('mayNull', function () {
+      it('should return null when null', function () {
+        assert.equal(T.mayNull.from(), null);
+      });
+      it('should return null when blank', function () {
+        assert.equal(T.mayNull.from(' '), null);
+      });
+      it('should return null when other value ', function () {
+        assert.equal(T.mayNull.from('C'), null);
+      });
+    });
+  });
+
+  describe('immuable', function () {
+    it('should not leaks states', function () {
+      const A = Enum.mayNull.as('A');
+      const B = Enum.mayNull.as('B');
+      const BC = B.as('C');
+
+      assert.equal(A.from('B'), null);
+      assert.equal(B.from('C'), null);
+      assert.equal(BC.from('B'), 'B');
+      assert.equal(BC.from('C'), 'C');
     });
   });
 
