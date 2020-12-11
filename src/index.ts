@@ -119,6 +119,8 @@ export interface IValue<A = any> {
   walk<X>(this: new (x?: A) => X, data: X, iter: string, key?: any, ...args: Array<any>): X;
 }
 
+export type ILazyValue = IValue | (() => IValue);
+
 export const Value = <IValue><unknown>function Value() {};
 
 tagCQESType(Value);
@@ -519,7 +521,7 @@ export const Object = (<IObject>Value.extends('Object'))
       if (model[field] instanceof _Array)
         object._fields.set(field, { type: Value.of(...model[field]) });
       else
-        object._fields.set(field, { type: Value.of(model[field]) });
+        object._fields.set(field, { type: model[field] });
     }
     return object;
   })
@@ -546,7 +548,7 @@ export const Object = (<IObject>Value.extends('Object'))
   })
   .setProperty('add', function add(field: string, type: any) {
     return this.clone((object: IObject) => {
-      object._fields.set(field, { type: Value.of(type) });
+      object._fields.set(field, { type });
     });
   })
   .setProperty('rewrite', function rewrite(field: string, predicate: any, value: any) {
@@ -583,10 +585,11 @@ export const Object = (<IObject>Value.extends('Object'))
     result.$ = this.name;
     const fillers = <{ [name: string]: { type: IValue, postfill: filler, enumerable: boolean } }>{};
     for (const [name, { type, postfill }] of this._fields) {
+      const _type = getType(type);
       try {
-        result[name] = type.from(data[name], warn);
+        result[name] = _type.from(data[name], warn);
         if (result[name] == null && postfill != null)
-          fillers[name] = { type, postfill: postfill.filler, enumerable: !!postfill.enumerable };
+          fillers[name] = { type: _type, postfill: postfill.filler, enumerable: !!postfill.enumerable };
       } catch (e) {
         if (postfill != null) continue ;
         const strval = JSON.stringify(data[name]);
@@ -826,8 +829,8 @@ export const Array = (<IArray>Collection.extends('Array'))
 // Map
 export interface IMap extends ICollection<Map<any, any>> {
   _constructor: { new (): Map<any, any> };
-  _index:   IValue;
-  _subtype: IValue;
+  _index:   ILazyValue;
+  _subtype: ILazyValue;
   toJSON: (this: Map<any, any>) => any;
 
   compare(from: Map<any, any>, to: Map<any, any>): number;
@@ -915,7 +918,7 @@ export const Map = (<IMap>Collection.extends('Map'))
 // Tuple
 export interface ITuple extends ICollection<any[]> {
   _constructor: { new (): any[] };
-  _types: Array<IValue>;
+  _types: Array<ILazyValue>;
   compare(from: any[], to: any[]): number;
 }
 
@@ -926,7 +929,7 @@ export const Tuple = (<ITuple>Collection.extends('Tuple'))
   .setProperty('_types', new _Array())
   .setProperty('of', function (...types: Array<any>) {
     return this.clone((value: ITuple) => {
-      value._types = types.map(T => Value.of(T));
+      value._types = types.map(T => T);
     });
   })
   .setProperty('compare', function compare(from: any, to: any) {
@@ -954,7 +957,7 @@ export const Tuple = (<ITuple>Collection.extends('Tuple'))
     if (data == null) data = [];
     for (let i = 0; i < this._types.length; i += 1) {
       try {
-        const type = this._types[i];
+        const type = getType(this._types[i]);
         const value = type.from(data[i], warn);
         if (value != null) result[i] = value;
       } catch (e) {
@@ -969,7 +972,7 @@ export const Tuple = (<ITuple>Collection.extends('Tuple'))
 // Record
 export interface IRecord extends ICollection<{ [name: string]: any }> {
   _constructor: { new (): { [name: string]: any } };
-  _members:  Map<string, { type: IValue, postfill?: { filler: filler, enumerable: boolean } }>;
+  _members:  Map<string, { type: ILazyValue, postfill?: { filler: filler, enumerable: boolean } }>;
   mayEmpty: this;
   compare(from: { [name: string]: any }, to: { [name: string]: any }): number;
   add<T>(this: T, field: string, type: any): T;
@@ -1009,7 +1012,7 @@ export const Record = (<IRecord>Collection.extends('Record'))
   })
   .setProperty('add', function add(field: string, type: any) {
     return this.clone((object: IRecord) => {
-      object._members.set(field, { type: Value.of(type) });
+      object._members.set(field, { type });
     });
   })
   .setProperty('remove', function add(field: string) {
@@ -1029,12 +1032,13 @@ export const Record = (<IRecord>Collection.extends('Record'))
     _Object.defineProperty(result, 'toString', toStringMethodProperty);
     const fillers = <{ [name: string]: { type: IValue, postfill: filler, enumerable: boolean } }>{};
     for (const [name, { type, postfill }] of this._members) {
+      const _type = getType(type);
       try {
-        const value = type.from(data[name], warn);
+        const value = _type.from(data[name], warn);
         if (value != null)
           result[name] = value;
         else if (postfill != null)
-          fillers[name] = { type, postfill: postfill.filler, enumerable: !!postfill.enumerable };
+          fillers[name] = { type: _type, postfill: postfill.filler, enumerable: !!postfill.enumerable };
       } catch (e) {
         if (postfill != null) continue ;
         const strval = JSON.stringify(data[name]);
@@ -1151,4 +1155,7 @@ export const DateTime = (<IDateTime>Value.extends('DateTime'))
     if (value.toString() === 'Invalid Date') throw new TypeError('Invalid date format');
   });
 
+// Words
 
+export class Done     extends Record.setDefault({}) {};
+export class NotFound extends Record.setDefault({}) {};

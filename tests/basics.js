@@ -1,4 +1,4 @@
-const { Record, Map, Array, Set, Sum, Object, Enum, String, Number, Boolean, Value, Date, Time, DateTime
+const { Record, Map, Array, Set, Sum, Tuple, Object, Enum, String, Number, Boolean, Value, Date, Time, DateTime
       , _Date, _Array, _Set, _Map
       }      = require('..');
 const assert = require('assert');
@@ -107,6 +107,12 @@ describe('Object', function () {
     });
   });
 
+  it('should accept lazy Type', function () {
+    class T extends Object.add('f', () => F) {};
+    const F = Boolean;
+    assert(T.from({ f: 'YES' }), { $: 'T', f: true });
+  });
+
 });
 
 describe('Sum', function () {
@@ -150,6 +156,13 @@ describe('Array', function () {
 
 describe('Map', function () {
 
+  it('should accept lazy Type', function () {
+    const T = Map(() => I, () => J);
+    const I = Number;
+    const J = Boolean;
+    assert.deepEqual(_Array.from(T.from([['42', 'Y']])), [[42, true]]);
+  });
+
 });
 
 describe('Record', function () {
@@ -169,5 +182,22 @@ describe('Record', function () {
 
   });
 
+  it('should accept lazy Type', function () {
+    const T = Record.add('f', () => F);
+    const F = Boolean;
+    assert(T.from({ f: 'YES' }), { f: true });
+  });
+
 });
 
+describe('Tuple', function () {
+
+
+  it('should accept lazy Type', function () {
+    class G extends Number {}
+    const T = Tuple.of(() => F, G);
+    const F = Boolean;
+    assert(T.from(['YES', '42']), [true, 42]);
+  });
+
+});
