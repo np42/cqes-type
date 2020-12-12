@@ -1,4 +1,5 @@
-const { Record, Map, Array, Set, Sum, Tuple, Object, Enum, String, Number, Boolean, Value, Date, Time, DateTime
+const { Entity, Record, Map, Array, Set, Sum, Tuple, Object
+      , Enum, String, Number, Boolean, Value, Date, Time, DateTime
       , _Date, _Array, _Set, _Map
       }      = require('..');
 const assert = require('assert');
@@ -83,38 +84,6 @@ describe('Enum', function () {
 
 });
 
-describe('Object', function () {
-
-  describe('$', function () {
-    it('should has default Object', function () {
-      const T = Object.add('field', Boolean.mayNull);
-      assert.equal(T.from({}).$, 'Object');
-    });
-    it('should has named Type', function () {
-      class Type extends Object.add('field', Boolean.mayNull) {};
-      assert.equal(Type.from({}).$, 'Type');
-    });
-  });
-
-  describe('toString', function () {
-    it('should has custom toString function', function () {
-      class T extends Object.add('field', String) {
-        static toString(data) {
-          return data.field.slice(0, 4) + "'" + data.field.slice(4);
-        }
-      }
-      assert.equal(T.from({ field: 'hello' }), "hell'o");
-    });
-  });
-
-  it('should accept lazy Type', function () {
-    class T extends Object.add('f', () => F) {};
-    const F = Boolean;
-    assert(T.from({ f: 'YES' }), { $: 'T', f: true });
-  });
-
-});
-
 describe('Sum', function () {
 
   describe('toString', function () {
@@ -165,6 +134,18 @@ describe('Map', function () {
 
 });
 
+describe('Tuple', function () {
+
+
+  it('should accept lazy Type', function () {
+    class G extends Number {}
+    const T = Tuple.of(() => F, G);
+    const F = Boolean;
+    assert.deepEqual(T.from(['YES', '42']), [true, 42]);
+  });
+
+});
+
 describe('Record', function () {
 
   describe('empty / not empty', function () {
@@ -185,19 +166,60 @@ describe('Record', function () {
   it('should accept lazy Type', function () {
     const T = Record.add('f', () => F);
     const F = Boolean;
-    assert(T.from({ f: 'YES' }), { f: true });
+    assert.deepEqual(T.from({ f: 'YES' }), { f: true });
   });
 
 });
 
-describe('Tuple', function () {
 
+describe('Object', function () {
+
+  describe('$', function () {
+    it('should has default Object', function () {
+      const T = Object.add('field', Boolean.mayNull);
+      assert.equal(T.from({}).$, 'Object');
+    });
+    it('should has named Type', function () {
+      class Type extends Object.add('field', Boolean.mayNull) {};
+      assert.equal(Type.from({}).$, 'Type');
+    });
+  });
+
+  describe('toString', function () {
+    it('should has custom toString function', function () {
+      class T extends Object.add('field', String) {
+        static toString(data) {
+          return data.field.slice(0, 4) + "'" + data.field.slice(4);
+        }
+      }
+      assert.equal(T.from({ field: 'hello' }), "hell'o");
+    });
+  });
 
   it('should accept lazy Type', function () {
-    class G extends Number {}
-    const T = Tuple.of(() => F, G);
+    class T extends Object.add('f', () => F) {};
     const F = Boolean;
-    assert(T.from(['YES', '42']), [true, 42]);
+    const value = T.from({ f: 'YES' });
+    assert.deepEqual(value, { f: true });
+    assert.equal(value.$, 'T');
+  });
+
+});
+
+describe('Entity', function () {
+
+  describe('about _id field', function () {
+    class Example extends Entity {};
+    it('should has `_id` if `id` present in data', function () {
+      debugger;
+      assert.equal(Example.from({ _id: 42 })._id, 42);
+    });
+    it('shouldhas `_id` if `<lowerCamelCaseName>Id` present in data', function () {
+      assert.equal(Example.from({ exampleId: 42 })._id, 42);
+    });
+    it('should has `_id` if `_id` present in data', function () {
+      assert.equal(Example.from({ id: 42 })._id, 42);
+    });
   });
 
 });

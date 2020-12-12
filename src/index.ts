@@ -7,7 +7,8 @@ import { inspect }       from 'util';
 //  > Add Range Type: 5-10, 5 or more, 10 or less, not between 5-10
 //  > Handle Recursive Sum Types
 
-const _tag      = Symbol('cqes-type');
+const TYPE_TAG      = Symbol('cqes-type');
+const GETTER_PREFIX = '__get_';
 
 export const _Boolean  = globalThis.Boolean;
 export const _Number   = globalThis.Number;
@@ -33,13 +34,14 @@ export class TypeError extends Error {
   }
 }
 
-export type rewriter<T>   = (this: T, a: any) => any;
-export type predicate<T>  = (this: T, a: any) => boolean;
-export type assertion<T>  = (this: T, a: any) => void;
-export type constraint<T> = RegExp | predicate<T> | assertion<T>;
-export type parser<T>     = (this: T, a: any)       => any | void;
-export type warn          = (error: Error)          => void;
-export type filler        = (input: any)            => any;
+export type preRewriter<T>  = (this: T, a: any) => any;
+export type postRewriter<T> = (this: T, a: any, b?: any) => any;
+export type predicate<T>    = (this: T, a: any) => boolean;
+export type assertion<T>    = (this: T, a: any) => void;
+export type constraint<T>   = RegExp | predicate<T> | assertion<T>;
+export type parser<T>       = (this: T, a: any)       => any | void;
+export type warn            = (error: Error)          => void;
+export type filler          = (input: any)            => any;
 
 const makeConstructor = (name: string) => {
   if (!/^[a-z$_][a-z0-9$_]*$/i.test(name)) throw new Error('Bad name');
@@ -68,11 +70,11 @@ const fnHasNativeProps = _Object.getOwnPropertyNames(function () {}).reduce((res
 }, {});
 
 const tagCQESType = (Type: any) => {
-  _Object.defineProperty(Type, _tag, { value: true, enumerable: false, writable: false });
+  _Object.defineProperty(Type, TYPE_TAG, { value: true, enumerable: false, writable: false });
 }
 
 export function isType(Type: any, name?: string): Type is Typer {
-  if (!(Type && Type[_tag])) return false;
+  if (!(Type && Type[TYPE_TAG])) return false;
   if (name == null) return true;
   return Type.name === name;
 }
@@ -94,24 +96,27 @@ export interface IValue<A = any> {
   (...types: any[]):  this;
   new ():             A;
 
-  _default:     (input?: any) => A;
-  _rewriters:   Array<any>;
-  _parsers:     Array<any>;
-  _assertions:  Array<any>;
-  _cache:       Map<string, IValue<A>>;
-  _debug:       boolean;
+  _default:       (input?: any) => A;
+  _preRewriters:  Array<preRewriter<any>>;
+  _postRewriters: Array<postRewriter<any>>;
+  _parsers:       Array<any>;
+  _assertions:    Array<any>;
+  _cache:         Map<string, IValue<A>>;
 
   defineProperty(name: string, value: any, isGetter?: boolean): void;
 
-  debug<T>(this: T):                                                     T;
   extends<T>(this: T, name: string):                                     T;
   clone<T>(this: T, fn?: (type: T) => void):                             T;
   of<T>(this: T, ...a: any[]):                                           T;
   setProperty<T>(this: T, name: string, value: any, isGetter?: boolean): T;
-  addRewriter<T>(this: T, rewriter: rewriter<T>):                        T;
-  addConstraint<T>(this: T, fn: constraint<T>):                          T;
-  addParser<T>(this: T, fn: parser<T>):                                  T;
+  unsetProperty<T>(this: T, name: string):                               T;
+
+  addPreRewriter<T>(this: T, rewriter: preRewriter<T>):                  T;
   setDefault<T>(this: T, fn: any):                                       T;
+  addParser<T>(this: T, fn: parser<T>):                                  T;
+  addPostRewriter<T>(this: T, rewriter: postRewriter<T>):                T;
+  addConstraint<T>(this: T, fn: constraint<T>):                          T;
+
   mayNull:                                                               this;
 
   from<X>(this: new (input?: A) => X, data?: A, warn?: warn): X;
@@ -128,7 +133,7 @@ tagCQESType(Value);
 Value.defineProperty = function defineProperty(name: string, value: any, isGetter?: boolean) {
   if (isGetter) {
     if (typeof value === 'function' && value.length === 0) {
-      const indirection = '__get_' + name;
+      const indirection = GETTER_PREFIX + name;
       _Object.defineProperty(this, indirection, { value, enumerable: true, writable: true });
       if (!(name in this)) {
         _Object.defineProperty(this, name, { get: function () {
@@ -151,33 +156,27 @@ Value.defineProperty = function defineProperty(name: string, value: any, isGette
   }
 };
 
-Value.defineProperty('_debug',      false);
-Value.defineProperty('_rewriters',  new _Array());
-Value.defineProperty('_parsers',    new _Array());
-Value.defineProperty('_assertions', new _Array());
-
-Value.defineProperty('debug', function debug() {
-  debugger;
-  return this.clone((type: IValue) => {
-    type._debug = true;
-  });
-});
+Value.defineProperty('_preRewriters',  new _Array());
+Value.defineProperty('_postRewriters', new _Array());
+Value.defineProperty('_parsers',       new _Array());
+Value.defineProperty('_assertions',    new _Array());
 
 Value.defineProperty('type', function type() {
   return this;
 });
 
-Value.defineProperty('extends', function extend(name: string) {
+Value.defineProperty('extends', function extend(name: string, exclude?: Array<string>) {
   const value = makeConstructor(name);
   tagCQESType(value);
   let parent = this;
   while (parent != null) {
-    if (parent.hasOwnProperty(_tag)) break ;
+    if (parent.hasOwnProperty(TYPE_TAG)) break ;
     parent = _Object.getPrototypeOf(parent);
   }
   if (parent == null) throw new Error('Must be a CQES/Type');
   const props = [].concat(_Object.getOwnPropertyNames(this), _Object.getOwnPropertyNames(parent));
   for (let key of props) {
+    if (exclude && ~exclude.indexOf(key)) continue ;
     if (fnHasNativeProps[key]) continue ;
     switch (key) {
     case '_cache': { value._cache = new _Map(); } break ;
@@ -210,14 +209,14 @@ Value.defineProperty('extends', function extend(name: string) {
   return value;
 });
 
-Value.defineProperty('clone', function clone(modifier?: (a: any) => any) {
-  const value = this.extends(this.name);
+Value.defineProperty('clone', function clone(modifier?: (a: any) => any, exclude?: Array<string>) {
+  const value = this.extends(this.name, exclude);
   if (modifier) modifier.call(null, value);
   return value;
 });
 
 Value.defineProperty('of', function of(model?: any, ...rest: any[]) {
-  if (model && model[_tag]) return model;
+  if (model && model[TYPE_TAG]) return model;
   if (isConstructor(model)) throw new Error(model.name + ' is not a valid type, forgot an import ?');
   throw new Error('Value can not hold value');
 });
@@ -226,6 +225,10 @@ Value.defineProperty('setProperty', function setProperty(name: string, value: an
   return this.clone((type: IValue) => {
     type.defineProperty(name, value, isGetter);
   });
+});
+
+Value.defineProperty('unsetProperty', function unsetProperty(name: string) {
+  return this.clone(null, [name]);
 });
 
 Value.defineProperty('setDefault', function setDefault(defaultValue: any) {
@@ -246,10 +249,17 @@ Value.defineProperty('mayNull', function mayNull() {
   return this.setDefault(null);
 }, true);
 
-Value.defineProperty('addRewriter', function rewrite<T>(rewriter: rewriter<T>) {
+Value.defineProperty('addPreRewriter', function rewrite<T>(rewriter: preRewriter<T>) {
   if (rewriter == null) throw new Error('Require a function');
   return this.clone((type: IValue) => {
-    type._rewriters.push(rewriter);
+    type._preRewriters.push(rewriter);
+  });
+});
+
+Value.defineProperty('addPostRewriter', function rewrite<T>(rewriter: postRewriter<T>) {
+  if (rewriter == null) throw new Error('Require a function');
+  return this.clone((type: IValue) => {
+    type._postRewriters.unshift(rewriter);
   });
 });
 
@@ -280,10 +290,10 @@ Value.defineProperty('addConstraint', function addConstraint<T>(constraint: cons
 });
 
 Value.defineProperty('from', function from(value?: any, warn?: warn) {
-  if (this._debug) debugger;
   if (value instanceof this) return value;
-  for (let i = 0; i < this._rewriters.length; i += 1)
-    value = this._rewriters[i].call(this, value);
+  for (let i = 0; i < this._preRewriters.length; i += 1)
+    value = this._preRewriters[i].call(this, value);
+  const preparedValue = value;
   if (value == null) {
     if (this._default != null) value = this._default(value);
     else throw new TypeError('Mandatory value is missing, no default defined');
@@ -296,6 +306,8 @@ Value.defineProperty('from', function from(value?: any, warn?: warn) {
       value = result;
       break ;
     }
+    for (let i = 0; i < this._postRewriters.length; i += 1)
+      value = this._postRewriters[i].call(this, value, preparedValue);
     for (let i = 0; i < this._assertions.length; i += 1)
       if (this._assertions[i].call(this, value) === false)
         throw new Error(this._assertions[i].name + ' not satisfied');
@@ -500,118 +512,6 @@ export const Enum = (<IEnum>Value.extends('Enum'))
       if (parser.call(this, value) != null)
         return ;
     throw new Error('Value is not in Enum');
-  });
-
-
-// Object
-export interface IObject extends IValue<{ $: string }> {
-  _fields:  Map<string, { type: IValue, postfill?: { filler: filler, enumerable: boolean } }>;
-
-  add<T>(this: T, field: string, type: any):                                    T;
-  rewrite<T>(this: T, field: string, predicate: predicate<T>, value: any):      T;
-  fixIf<T>(this: T, pattern: string | Function, handler: string | rewriter<T>): T;
-  postfill<T>(this: T, field: string, filler: filler, enumerable?: boolean):    T;
-}
-
-export const Object = (<IObject>Value.extends('Object'))
-  .setProperty('_fields', new _Map())
-  .setProperty('of', function of(model: { [name: string]: any }) {
-    const object = this.clone();
-    for (const field in model) {
-      if (model[field] instanceof _Array)
-        object._fields.set(field, { type: Value.of(...model[field]) });
-      else
-        object._fields.set(field, { type: model[field] });
-    }
-    return object;
-  })
-  .setProperty('compare', function compare(from: any, to: any) {
-    let diff = 0;
-    for (const [name, { type }] of this._fields)
-      diff += type.compare(from && from[name], to && to[name]);
-    return diff;
-  })
-  .setProperty('walk', function walk<A>(data: A, iter: string, key: any, ...args: Array<any>): A {
-    if (typeof this[iter] === 'function') {
-      const value = this[iter].call(this, data, args[0], key, ...args.slice(1));
-      if (value !== undefined && value != data) data = value;
-    }
-    if (data == null) return null;
-    data = { $: this.name, ...data };
-    for (const [name, { type }] of this._fields)
-      data[name] = type.walk(data[name], iter, name, ...args);
-    if (typeof this[iter + '_after'] === 'function') {
-      const value = this[iter + '_after'].call(this, data, args[0], key, ...args.slice(1));
-      if (value !== undefined && value != data) data = value;
-    }
-    return data;
-  })
-  .setProperty('add', function add(field: string, type: any) {
-    return this.clone((object: IObject) => {
-      object._fields.set(field, { type });
-    });
-  })
-  .setProperty('rewrite', function rewrite(field: string, predicate: any, value: any) {
-    return this.addRewriter((object: any) => {
-      if (object && predicate(object[field]))
-        object[field] = value;
-      return object;
-    });
-  })
-  .setProperty('fixIf', function fixIf<T>(pattern: string | Function, handler: string | rewriter<T>) {
-    if (typeof pattern !== 'function') {
-      const key = pattern;
-      pattern = (value: any) =>
-        ( Object.prototype.toString.call(value) === '[object ' + key + ']'
-       || (value && value.$ === key)
-        );
-    }
-    if (typeof handler !== 'function') {
-      const key = handler;
-      handler = (input: any) => ({ [key]: input });
-    }
-    return this.addRewriter((input: any) => (<Function>pattern)(input) ? (<Function>handler)(input) : input);
-  })
-  .setProperty('postfill', function postfill(field: string, filler: filler, enumerable?: boolean) {
-    return this.clone((object: IObject) => {
-      const child = object._fields.get(field);
-      if (child == null) throw new Error('Require field: ' + field + ' to be already defined');
-      object._fields.set(field, { ...child, postfill: { filler, enumerable } });
-    });
-  })
-  .addParser(function parseObject(data: any, warn?: warn) {
-    const result = new this();
-    _Object.defineProperty(result, 'toString', toStringMethodProperty);
-    result.$ = this.name;
-    const fillers = <{ [name: string]: { type: IValue, postfill: filler, enumerable: boolean } }>{};
-    for (const [name, { type, postfill }] of this._fields) {
-      const _type = getType(type);
-      try {
-        result[name] = _type.from(data[name], warn);
-        if (result[name] == null && postfill != null)
-          fillers[name] = { type: _type, postfill: postfill.filler, enumerable: !!postfill.enumerable };
-      } catch (e) {
-        if (postfill != null) continue ;
-        const strval = JSON.stringify(data[name]);
-        throw new TypeError('Failed on field: ' + name + ' = ' + strval, e);
-      }
-    }
-    for (const name in fillers) {
-      const { type, postfill, enumerable } = fillers[name];
-      let value = null;
-      try {
-        value = postfill.call(this, result);
-        value = type.from(value, warn);
-        if (value != null) _Object.defineProperty(result, name, { value, enumerable, writable: true });
-      } catch (e) {
-        const strval = JSON.stringify(value);
-        throw new TypeError('Failed on field: ' + name + ' = ' + strval, e);
-      }
-    }
-    return result;
-  })
-  .addConstraint(function isObject(data: any) {
-    if (typeof data != 'object') throw new TypeError('Require an object');
   });
 
 // Sum
@@ -972,8 +872,10 @@ export const Tuple = (<ITuple>Collection.extends('Tuple'))
 // Record
 export interface IRecord extends ICollection<{ [name: string]: any }> {
   _constructor: { new (): { [name: string]: any } };
-  _members:  Map<string, { type: ILazyValue, postfill?: { filler: filler, enumerable: boolean } }>;
+  _members:     Map<string, { type: ILazyValue, postfill?: { filler: filler, enumerable: boolean } }>;
+  _keepNull:    boolean;
   mayEmpty: this;
+  keepNull: this;
   compare(from: { [name: string]: any }, to: { [name: string]: any }): number;
   add<T>(this: T, field: string, type: any): T;
   remove<T>(this: T, field: string):         T;
@@ -985,8 +887,14 @@ export const Record = (<IRecord>Collection.extends('Record'))
     return makeCollectionConstructor(this.name, _Object);
   }, true)
   .setProperty('_members', new _Map())
+  .setProperty('_keepNull', false)
   .setProperty('mayEmpty', function mayEmpty() {
     return this.setDefault(() => {});
+  }, true)
+  .setProperty('keepNull', function keepNullValues() {
+    return this.clone((object: IRecord) => {
+      object._keepNull = true;
+    });
   }, true)
   .setProperty('compare', function compare(from: any, to: any) {
     throw new Error('TODO: Implement me');
@@ -1029,13 +937,12 @@ export const Record = (<IRecord>Collection.extends('Record'))
   })
   .addParser(function parseRecord(data: any, warn?: warn) {
     const result = new this();
-    _Object.defineProperty(result, 'toString', toStringMethodProperty);
     const fillers = <{ [name: string]: { type: IValue, postfill: filler, enumerable: boolean } }>{};
     for (const [name, { type, postfill }] of this._members) {
       const _type = getType(type);
       try {
         const value = _type.from(data[name], warn);
-        if (value != null)
+        if (value != null || this._keepNull)
           result[name] = value;
         else if (postfill != null)
           fillers[name] = { type: _type, postfill: postfill.filler, enumerable: !!postfill.enumerable };
@@ -1059,11 +966,58 @@ export const Record = (<IRecord>Collection.extends('Record'))
     }
     return result;
   })
+  .addPostRewriter(function (record: any) {
+    _Object.defineProperty(record, 'toString', toStringMethodProperty);
+    return record;
+  })
   .addConstraint(function isObject(data: any) {
     for (const key in data) return ;
     if (this._members.size === 0) return ;
     throw new Error('Empty Record');
   });
+
+// Object
+export interface IObject extends Omit<IRecord, 'mayEmpty'> {}
+
+export const Object = (<IObject>Record.extends('Object'))
+  .unsetProperty('mayEmpty')
+  .keepNull
+  .addPostRewriter(function (data: any) {
+    const output = new this();
+    const descriptors = { $: { value: this.name, configurable: true, enumerable: false, writable: false }
+                        , ..._Object.getOwnPropertyDescriptors(data)
+                        };
+    _Object.defineProperties(output, descriptors);
+    return output;
+  })
+  .addConstraint(function isObject(data: any) {
+    if (typeof data != 'object') throw new TypeError('Require an object');
+  });
+
+
+// Entity
+export interface IEntity extends IRecord {
+  _id?: any;
+}
+
+export const Entity = (<IEntity>Record.extends('Entity'))
+  .setProperty('_constructor', function () {
+    const constructor = makeCollectionConstructor(this.name, _Object);
+    return function (...args: any[]) {
+      const data = constructor(...args);
+      _Object.defineProperty(data, '_id', { value: null, configurable: true, writable: false, enumerable: false });
+      return data;
+    };
+  }, true)
+  .addPostRewriter(function (data: any, initialValue: any) {
+    if (!(typeof initialValue == 'object')) return data;
+    if (data._id != null) return data;
+    const idKey = this.name.slice(0, 1).toLowerCase() + this.name.slice(1) + 'Id';
+    const _id = initialValue._id || initialValue[idKey] || initialValue.id;
+    _Object.defineProperty(data, '_id', { value: _id, configurable: true, writable: false, enumerable: false });
+    return data;
+  });
+
 
 // ------------------------------------------
 // Extended Types
