@@ -290,7 +290,6 @@ Value.defineProperty('addConstraint', function addConstraint<T>(constraint: cons
 });
 
 Value.defineProperty('from', function from(value?: any, warn?: warn) {
-  if (value instanceof this) return value;
   for (let i = 0; i < this._preRewriters.length; i += 1)
     value = this._preRewriters[i].call(this, value);
   const preparedValue = value;
@@ -557,8 +556,7 @@ export const Sum = (<ISum>Value.extends('Sum'))
   .addParser(function parseValue(value: any, warn?: warn) {
     if (typeof value === 'object' && this._cases.has(value.$)) {
       const Type: any = this._cases.get(value.$);
-      if (isType(Type)) return Type.from(value, warn);
-      else return Type().from(value, warn);
+      return getType(Type).from(value, warn);
     } else if (this._defaultCase != null) {
       return this._defaultCase.from(value, warn);
     }
