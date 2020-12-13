@@ -1,6 +1,6 @@
 import { v4 as uuid }    from 'uuid';
 import { isConstructor, isLambda
-       } from 'cqes-util';
+       }                 from 'cqes-util';
 import { inspect }       from 'util';
 
 // TODO:
@@ -662,7 +662,7 @@ export const Set = (<ISet>Collection.extends('Set'))
 // Array
 export interface IArray extends ICollection<Array<any>> {
   _constructor: { new (): Array<any> };
-  _subtype: IValue;
+  _subtype:     IValue;
   compare(from: Array<any>, to: Array<any>): number;
 }
 
@@ -729,8 +729,8 @@ export const Array = (<IArray>Collection.extends('Array'))
 // Map
 export interface IMap extends ICollection<Map<any, any>> {
   _constructor: { new (): Map<any, any> };
-  _index:   ILazyValue;
-  _subtype: ILazyValue;
+  _index:       ILazyValue;
+  _subtype:     ILazyValue;
   toJSON: (this: Map<any, any>) => any;
 
   compare(from: Map<any, any>, to: Map<any, any>): number;
@@ -818,7 +818,7 @@ export const Map = (<IMap>Collection.extends('Map'))
 // Tuple
 export interface ITuple extends ICollection<any[]> {
   _constructor: { new (): any[] };
-  _types: Array<ILazyValue>;
+  _types:       Array<ILazyValue>;
   compare(from: any[], to: any[]): number;
 }
 
@@ -870,13 +870,13 @@ export const Tuple = (<ITuple>Collection.extends('Tuple'))
 ;
 
 // Record
-export interface IRecord extends ICollection<{ [name: string]: any }> {
-  _constructor: { new (): { [name: string]: any } };
+export interface IRecord<R = {}> extends ICollection<R & { [name: string]: any }> {
+  _constructor: { new (): R & { [name: string]: any } };
   _members:     Map<string, { type: ILazyValue, postfill?: { filler: filler, enumerable: boolean } }>;
   _keepNull:    boolean;
   mayEmpty: this;
   keepNull: this;
-  compare(from: { [name: string]: any }, to: { [name: string]: any }): number;
+  compare(from: R & { [name: string]: any }, to: R & { [name: string]: any }): number;
   add<T>(this: T, field: string, type: any): T;
   remove<T>(this: T, field: string):         T;
   postfill<T>(this: T, field: string, filler: filler, enumerable?: boolean): T;
@@ -977,14 +977,15 @@ export const Record = (<IRecord>Collection.extends('Record'))
   });
 
 // Object
-export interface IObject extends Omit<IRecord, 'mayEmpty'> {}
+export interface IObject extends Exclude<IRecord<{ $: string }>, 'mayEmpty'> {
+}
 
 export const Object = (<IObject>Record.extends('Object'))
   .unsetProperty('mayEmpty')
   .keepNull
   .addPostRewriter(function (data: any) {
     const output = new this();
-    const descriptors = { $: { value: this.name, configurable: true, enumerable: false, writable: false }
+    const descriptors = { $: { value: this.name, configurable: true, enumerable: true, writable: false }
                         , ..._Object.getOwnPropertyDescriptors(data)
                         };
     _Object.defineProperties(output, descriptors);
@@ -996,9 +997,7 @@ export const Object = (<IObject>Record.extends('Object'))
 
 
 // Entity
-export interface IEntity extends IRecord {
-  _id?: any;
-}
+export interface IEntity extends IRecord<{ _id?: any }> {}
 
 export const Entity = (<IEntity>Record.extends('Entity'))
   .setProperty('_constructor', function () {
@@ -1014,10 +1013,14 @@ export const Entity = (<IEntity>Record.extends('Entity'))
     if (data._id != null) return data;
     const idKey = this.name.slice(0, 1).toLowerCase() + this.name.slice(1) + 'Id';
     const _id = initialValue._id || initialValue[idKey] || initialValue.id;
-    _Object.defineProperty(data, '_id', { value: _id, configurable: true, writable: false, enumerable: false });
+    _Object.defineProperty(data, '_id', { value: _id, configurable: true, writable: false, enumerable: true });
     return data;
   });
 
+
+export interface IAggregateRoot extends IEntity {}
+
+export const AggregateRoot = (<IAggregateRoot>Entity.extends('AggregateRoot'));
 
 // ------------------------------------------
 // Extended Types

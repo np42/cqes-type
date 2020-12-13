@@ -183,6 +183,9 @@ describe('Object', function () {
       class Type extends Object.add('field', Boolean.mayNull) {};
       assert.equal(Type.from({}).$, 'Type');
     });
+    it('should be serializable', function () {
+      assert.equal(JSON.stringify(Object.from({})), '{"$":"Object"}');
+    });
   });
 
   describe('toString', function () {
@@ -200,8 +203,7 @@ describe('Object', function () {
     class T extends Object.add('f', () => F) {};
     const F = Boolean;
     const value = T.from({ f: 'YES' });
-    assert.deepEqual(value, { f: true });
-    assert.equal(value.$, 'T');
+    assert.deepEqual(value, { $: 'T', f: true });
   });
 
 });
@@ -211,14 +213,16 @@ describe('Entity', function () {
   describe('about _id field', function () {
     class Example extends Entity {};
     it('should has `_id` if `id` present in data', function () {
-      debugger;
       assert.equal(Example.from({ _id: 42 })._id, 42);
     });
-    it('shouldhas `_id` if `<lowerCamelCaseName>Id` present in data', function () {
+    it('should has `_id` if `<lowerCamelCaseName>Id` present in data', function () {
       assert.equal(Example.from({ exampleId: 42 })._id, 42);
     });
     it('should has `_id` if `_id` present in data', function () {
       assert.equal(Example.from({ id: 42 })._id, 42);
+    });
+    it('should has `_id` serialized', function () {
+      assert.equal(JSON.stringify(Example.from({ _id: 42 })), '{"_id":42}');
     });
   });
 
