@@ -102,10 +102,13 @@ export interface IValue<A = any> {
   _parsers:       Array<any>;
   _assertions:    Array<any>;
   _cache:         Map<string, IValue<A>>;
+  _source?:       string;
+  _fqnBase?:      string;
 
   defineProperty(name: string, value: any, isGetter?: boolean): void;
 
   extends<T>(this: T, name: string):                                     T;
+  locate<T>(this: T, filepath: string):                                  T;
   clone<T>(this: T, fn?: (type: T) => void):                             T;
   of<T>(this: T, ...a: any[]):                                           T;
   setProperty<T>(this: T, name: string, value: any, isGetter?: boolean): T;
@@ -117,7 +120,10 @@ export interface IValue<A = any> {
   addPostRewriter<T>(this: T, rewriter: postRewriter<T>):                T;
   addConstraint<T>(this: T, fn: constraint<T>):                          T;
 
-  mayNull:                                                               this;
+  // TODO: add .toString .toJSON methods
+
+  mayNull:  this;
+  fqn:      string;
 
   from<X>(this: new (input?: A) => X, data?: A, warn?: warn): X;
   compare(from: any, to: any): number;
@@ -214,6 +220,21 @@ Value.defineProperty('clone', function clone(modifier?: (a: any) => any, exclude
   if (modifier) modifier.call(null, value);
   return value;
 });
+
+Value.defineProperty('locate', function locate(filepath: string) {
+  return this.clone((type: IValue) => {
+    type._source = filepath;
+    type._fqnBase = filepath.split('/').reverse().reduce((fqn, fullname) => {
+      const name = fullname.split('.').shift();
+      if (/^[A-Z0-9]/.test(name)) fqn.unshift(name);
+      return fqn;
+    }, []).join(':');
+  });
+});
+
+Value.defineProperty('fqn', function fqn() {
+  return this._fqnBase != null ? this._fqnBase + ':' + this.name : this.name;
+}, true);
 
 Value.defineProperty('of', function of(model?: any, ...rest: any[]) {
   if (model && model[TYPE_TAG]) return model;
@@ -872,6 +893,7 @@ export interface IRecord<R = {}> extends ICollection<R & { [name: string]: any }
   _constructor: { new (): R & { [name: string]: any } };
   _members:     Map<string, { type: ILazyValue, postfill?: { filler: filler, enumerable: boolean } }>;
   _keepNull:    boolean;
+  _collapse:    boolean;
   mayEmpty: this;
   keepNull: this;
   compare(from: R & { [name: string]: any }, to: R & { [name: string]: any }): number;
@@ -886,6 +908,7 @@ export const Record = (<IRecord>Collection.extends('Record'))
   }, true)
   .setProperty('_members', new _Map())
   .setProperty('_keepNull', false)
+  .setProperty('_collapse', true)
   .setProperty('mayEmpty', function mayEmpty() {
     return this.setDefault(() => {});
   }, true)
@@ -965,13 +988,15 @@ export const Record = (<IRecord>Collection.extends('Record'))
     return result;
   })
   .addPostRewriter(function (record: any) {
+    if (record == null) return null;
     _Object.defineProperty(record, 'toString', toStringMethodProperty);
     return record;
   })
-  .addConstraint(function isObject(data: any) {
-    for (const key in data) return ;
-    if (this._members.size === 0) return ;
-    throw new Error('Empty Record');
+  .addPostRewriter(function (record: any) {
+    if (record == null) return null;
+    if (!this._collapse) return record;
+    for (const key in record) return record;
+    return null;
   });
 
 // Object
@@ -980,6 +1005,7 @@ export interface IObject extends Exclude<IRecord<{ $: string }>, 'mayEmpty'> {
 
 export const Object = (<IObject>Record.extends('Object'))
   .unsetProperty('mayEmpty')
+  .setProperty('_collapse', false)
   .keepNull
   .addPostRewriter(function (data: any) {
     const output = new this();
@@ -998,11 +1024,12 @@ export const Object = (<IObject>Record.extends('Object'))
 export interface IEntity extends IRecord<{ _id?: any }> {}
 
 export const Entity = (<IEntity>Record.extends('Entity'))
+  .setProperty('_collapse', false)
   .setProperty('_constructor', function () {
     const constructor = makeCollectionConstructor(this.name, _Object);
     return function (...args: any[]) {
       const data = constructor(...args);
-      _Object.defineProperty(data, '_id', { value: null, configurable: true, writable: false, enumerable: false });
+      _Object.defineProperty(data, '_id', { value: null, configurable: true, writable: true, enumerable: false });
       return data;
     };
   }, true)
@@ -1011,14 +1038,17 @@ export const Entity = (<IEntity>Record.extends('Entity'))
     if (data._id != null) return data;
     const idKey = this.name.slice(0, 1).toLowerCase() + this.name.slice(1) + 'Id';
     const _id = initialValue._id || initialValue[idKey] || initialValue.id;
-    _Object.defineProperty(data, '_id', { value: _id, configurable: true, writable: false, enumerable: true });
+    if (_id != null)
+      _Object.defineProperty(data, '_id', { value: _id, configurable: true, writable: false, enumerable: true });
     return data;
   });
 
 
 export interface IAggregateRoot extends IEntity {}
 
-export const AggregateRoot = (<IAggregateRoot>Entity.extends('AggregateRoot'));
+export const AggregateRoot = (<IAggregateRoot>Entity.extends('AggregateRoot'))
+  .setProperty('_collapse', false)
+;
 
 // ------------------------------------------
 // Extended Types

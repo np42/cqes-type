@@ -1,11 +1,20 @@
-const { Entity, Record, Map, Array, Set, Sum, Tuple, Object
+const { AggregateRoot, Entity, Record, Map, Array, Set, Sum, Tuple, Object
       , Enum, String, Number, Boolean, Value, Date, Time, DateTime
       , _Date, _Array, _Set, _Map
       }      = require('..');
 const assert = require('assert');
 
 describe('Value', function () {
-
+  describe('about location', function () {
+    const fakepath = '/tmp/Context/Aggregate.groupment.js';
+    class Order extends Value.locate(fakepath) {};
+    it('should contains _source', function () {
+      assert.equal(Order._source, fakepath);
+    });
+    it('should contains fqn', function () {
+      assert.equal(Order.fqn, 'Context:Aggregate:Order');
+    });
+  });
 });
 
 describe('Boolean', function () {
@@ -149,18 +158,23 @@ describe('Tuple', function () {
 describe('Record', function () {
 
   describe('empty / not empty', function () {
-
-    it('should reject empty Record', function () {
+    it('sould collapse on empty Record', function () {
       class Shape extends Record.add('field', Boolean.mayNull) {};
-      try { Shape.from({}); } catch (e) { return ; }
-      throw new Error('Should failed');
+      assert.equal(Shape.from({}), null)
     });
-
-    it('should accept empty Record', function () {
-      class Shape extends Record.mayEmpty.add('field', Boolean.mayNull) {};
-      Shape.from({});
+    class Shape2 extends Record
+      .add('field1', Record.add('sub', String.mayNull).mayNull)
+      .add('field2', String)
+    {}
+    it('should collapse empty field if missing', function () {
+      assert.deepEqual(Shape2.from({ field2: 'ok' }), { field2: 'ok' });
     });
-
+    it('should collapse empty field if null', function () {
+      assert.deepEqual(Shape2.from({ field1: null, field2: 'ok' }), { field2: 'ok' });
+    });
+    it('should collapse empty field if empty', function () {
+      assert.deepEqual(Shape2.from({ field1: {}, field2: 'ok' }), { field2: 'ok' });
+    });
   });
 
   it('should accept lazy Type', function () {
@@ -173,6 +187,13 @@ describe('Record', function () {
 
 
 describe('Object', function () {
+
+  describe('empty Object', function () {
+    it('should not be null', function () {
+      class Shape extends Object.add('field', Boolean.mayNull) {};
+      assert.notEqual(Shape.from({}), null)
+    });
+  });
 
   describe('$', function () {
     it('should has default Object', function () {
@@ -210,6 +231,13 @@ describe('Object', function () {
 
 describe('Entity', function () {
 
+  describe('empty Entity', function () {
+    it('should not be null', function () {
+      class Shape extends Entity.add('field', Boolean.mayNull) {};
+      assert.notEqual(Shape.from({}), null)
+    });
+  });
+
   describe('about _id field', function () {
     class Example extends Entity {};
     it('should has `_id` if `id` present in data', function () {
@@ -223,6 +251,24 @@ describe('Entity', function () {
     });
     it('should has `_id` serialized', function () {
       assert.equal(JSON.stringify(Example.from({ _id: 42 })), '{"_id":42}');
+    });
+  });
+
+});
+
+describe('AggregateRoot', function () {
+
+  describe('empty AggregateRoot', function () {
+    it('should not be null', function () {
+      class Shape extends AggregateRoot.add('field', Boolean.mayNull) {};
+      assert.notEqual(Shape.from({}), null)
+    });
+  });
+
+  describe('may empty for initialization', function () {
+    class Toto extends AggregateRoot.add('field', String.mayNull) {};
+    it('should accept empty data', function () {
+      assert.deepEqual(Toto.from({}), {});
     });
   });
 
