@@ -2,6 +2,7 @@
   "name": "cqes-type",
   "version": "1.0.0",
   "description": "Typescript runtime typing library",
+  "main": "dist/src/index.js",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/apiculteur/cqes-type.git"
