@@ -20,7 +20,7 @@ export const _Set      = globalThis.Set;
 export const _Array    = globalThis.Array;
 export const _Map      = globalThis.Map;
 
-export type Typer     = { from(data: any, warn?: warn): Typed, name: string };
+export type Typer     = { from(data: any, warn?: warn): Typed, name: string, fqn?: string };
 export type Typed     = any;
 
 export class TypeError extends Error {
