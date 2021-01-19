@@ -897,8 +897,8 @@ export interface IRecord<R = {}> extends ICollection<R & { [name: string]: any }
   mayEmpty: this;
   keepNull: this;
   compare(from: R & { [name: string]: any }, to: R & { [name: string]: any }): number;
-  add<T>(this: T, field: string, type: any): T;
-  remove<T>(this: T, field: string):         T;
+  add<T>(this: T, field: string, type: any, virtual?: (value: T) => any): T;
+  remove<T>(this: T, field: string): T;
   postfill<T>(this: T, field: string, filler: filler, enumerable?: boolean): T;
 }
 
@@ -939,9 +939,10 @@ export const Record = (<IRecord>Collection.extends('Record'))
     for (const any in data) return data;
     return null;
   })
-  .setProperty('add', function add(field: string, type: any) {
+  .setProperty('add', function add(field: string, type: any, filler?: filler) {
     return this.clone((object: IRecord) => {
-      object._members.set(field, { type });
+      const postfill = filler != null ? { filler, enumerable: true } : null;
+      object._members.set(field, { type, postfill });
     });
   })
   .setProperty('remove', function add(field: string) {
@@ -965,12 +966,13 @@ export const Record = (<IRecord>Collection.extends('Record'))
         const value = _type.from(data[name], warn);
         if (value != null || this._keepNull)
           result[name] = value;
-        else if (postfill != null)
-          fillers[name] = { type: _type, postfill: postfill.filler, enumerable: !!postfill.enumerable };
       } catch (e) {
         if (postfill != null) continue ;
         const strval = JSON.stringify(data[name]);
         throw new TypeError('Failed on field: ' + name + ' = ' + strval, e);
+      } finally {
+        if (result[name] == null && postfill != null)
+          fillers[name] = { type: _type, postfill: postfill.filler, enumerable: !!postfill.enumerable };
       }
     }
     for (const name in fillers) {

@@ -145,7 +145,6 @@ describe('Map', function () {
 
 describe('Tuple', function () {
 
-
   it('should accept lazy Type', function () {
     class G extends Number {}
     const T = Tuple.of(() => F, G);
@@ -181,6 +180,11 @@ describe('Record', function () {
     const T = Record.add('f', () => F);
     const F = Boolean;
     assert.deepEqual(T.from({ f: 'YES' }), { f: true });
+  });
+
+  it('should handle virtual field', function () {
+    const T = Record.add('f1', String).add('virtual', String, data => 'hello ' + data.f1);
+    assert.equal(T.from({ f1: 'world' }).virtual, 'hello world');
   });
 
 });
