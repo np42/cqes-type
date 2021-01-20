@@ -897,7 +897,7 @@ export interface IRecord<R = {}> extends ICollection<R & { [name: string]: any }
   mayEmpty: this;
   keepNull: this;
   compare(from: R & { [name: string]: any }, to: R & { [name: string]: any }): number;
-  add<T>(this: T, field: string, type: any, virtual?: (value: T) => any): T;
+  add<T>(this: T, field: string, type: any, virtual?: (value: any) => any): T;
   remove<T>(this: T, field: string): T;
   postfill<T>(this: T, field: string, filler: filler, enumerable?: boolean): T;
 }
