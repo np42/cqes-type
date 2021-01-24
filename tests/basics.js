@@ -171,8 +171,18 @@ describe('Record', function () {
     it('should collapse empty field if null', function () {
       assert.deepEqual(Shape2.from({ field1: null, field2: 'ok' }), { field2: 'ok' });
     });
-    it('should collapse empty field if empty', function () {
+    it('should collapse empty field if empty object', function () {
       assert.deepEqual(Shape2.from({ field1: {}, field2: 'ok' }), { field2: 'ok' });
+    });
+    it('should not accept null data', function () {
+      class Test extends Record.add('f1', Enum.as('DefaultValue')) {};
+      try { Test.from(null) }
+      catch (e) { return ; }
+      throw new Error('Should throw an error');
+    });
+    it('should accept empty object', function () {
+      class Test extends Record.add('f1', Enum.as('DefaultValue')) {};
+      assert.deepEqual(Test.from({}), { f1: 'DefaultValue' });
     });
   });
 
