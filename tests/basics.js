@@ -109,6 +109,16 @@ describe('Sum', function () {
       assert.deepEqual(T.from({ $: 'A', f: 42 }), { $: 'A', f: '42' });
       assert.deepEqual(T.from({ $: 'B', f: '42' }), { $: 'B', f: 42 });
     });
+
+    it('should not accept undeclared content', function () {
+      class T extends Sum
+        .either('A', Object.add('f', String))
+        .either('B', Object.add('f', Number))
+      {};
+      try { T.from({ k: 42 }) }
+      catch (e) { return ; }
+      throw new Error('Undeclared value { k: 42 } accepted');
+    });
   });
 
   describe('toString', function () {

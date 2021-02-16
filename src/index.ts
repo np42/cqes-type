@@ -597,7 +597,7 @@ export const Sum = (<ISum>Value.extends('Sum'))
           return [this._defaultCase.name, this._defaultCase.from(value, warn)];
         }
       }
-      return [null, null];
+      throw new Error('Unable to handle this value');
     })();
     if (result != null) {
       _Object.defineProperty
