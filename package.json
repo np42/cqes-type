@@ -9,7 +9,7 @@
   },
   "keywords": [],
   "scripts": {
-    "test": "./node_modules/.bin/mocha tests"
+    "test": "mocha tests"
   },
   "author": "Nicolas Pelletier <npelletier@apiculteur.io>",
   "license": "ISC",

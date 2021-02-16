@@ -95,6 +95,22 @@ describe('Enum', function () {
 
 describe('Sum', function () {
 
+  describe('kind of accepted values', function () {
+    it('should accept anonymous types', function () {
+      class T extends Sum.either('A', Object.add('f', String)) {};
+      assert.deepEqual(T.from({ $: 'A', f: '42' }), { $: 'A', f: '42' });
+    });
+
+    it('should accept name based value', function () {
+      class T extends Sum
+        .either('A', Object.add('f', String))
+        .either('B', Object.add('f', Number))
+      {};
+      assert.deepEqual(T.from({ $: 'A', f: 42 }), { $: 'A', f: '42' });
+      assert.deepEqual(T.from({ $: 'B', f: '42' }), { $: 'B', f: 42 });
+    });
+  });
+
   describe('toString', function () {
     it('should has custom toString function', function () {
       class T extends Object.add('field', String) {
@@ -104,7 +120,7 @@ describe('Sum', function () {
         static toString(data) { return data.foo + 1; }
       }
       class S extends Sum.either('U', U).either('T', T) {};
-      assert.equal(S.from({ $: 'T', field: 'hello' }), "hell'o");
+      assert.equal(S.from({ $: 'T', field: 'hello' }).toString(), "hell'o");
     });
   });
 
@@ -220,6 +236,13 @@ describe('Object', function () {
     });
     it('should be serializable', function () {
       assert.equal(JSON.stringify(Object.from({})), '{"$":"Object"}');
+    });
+  });
+
+  describe('fields', function () {
+    it('should reject non declared fields', function () {
+      const T = Object.add('field', Number);
+      assert.deepEqual(T.from({ field: 42, extra: 'not expected' }), { $: 'Object', field: 42 });
     });
   });
 

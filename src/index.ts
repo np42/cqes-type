@@ -125,6 +125,7 @@ export interface IValue<A = any> {
   mayNull:  this;
   fqn:      string;
 
+  test(data: any): boolean;
   from<X>(this: new (input?: A) => X, data?: A, warn?: warn): X;
   compare(from: any, to: any): number;
   walk<X>(this: new (x?: A) => X, data: X, iter: string, key?: any, ...args: Array<any>): X;
@@ -308,6 +309,15 @@ Value.defineProperty('addConstraint', function addConstraint<T>(constraint: cons
           throw new TypeError('Constraint (=== ' + constraint + ') not satisfied')
       });
   });
+});
+
+Value.defineProperty('test', function test(value: any) {
+  try {
+    if (this.from(value) != null)
+      return true;
+  } catch (e) {
+  }
+  return false;
 });
 
 Value.defineProperty('from', function from(value?: any, warn?: warn) {
@@ -536,19 +546,17 @@ export const Enum = (<IEnum>Value.extends('Enum'))
 
 // Sum
 export interface ISum extends IValue<{ $: string }> {
-  _cases:        Map<string, IObject>;
+  _cases:        Map<string, { type: IObject, test: predicate<any> }>;
   _defaultCase?: IValue;
   mayEmpty:      this;
-  either<T>(this: T, name: string, type: any): T;
+  either<T>(this: T, name: string | IObject, type?: IObject): T;
 }
 
 export const Sum = (<ISum>Value.extends('Sum'))
   .setProperty('_cases', new _Map())
-  .setProperty('either', function either(name: string, casetype: IObject) {
+  .setProperty('either', function either<T>(name: string, type: IObject, test?: predicate<T>) {
     if (this._cases.has(name)) throw new Error('this case already exists');
-    return this.clone((type: ISum) => {
-      type._cases.set(name, casetype);
-    });
+    return this.clone((sum: ISum) => { sum._cases.set(name, { type, test }); });
   })
   .setProperty('mayEmpty', function mayEmpty() {
     return this.setDefault(() => new class Undefined {});
@@ -575,13 +583,28 @@ export const Sum = (<ISum>Value.extends('Sum'))
     return null;
   })
   .addParser(function parseValue(value: any, warn?: warn) {
-    if (typeof value === 'object' && this._cases.has(value.$)) {
-      const Type: any = this._cases.get(value.$);
-      return getType(Type).from(value, warn);
-    } else if (this._defaultCase != null) {
-      return this._defaultCase.from(value, warn);
+    const [$, result] = (() => {
+      if (typeof value === 'object' && this._cases.has(value.$)) {
+        const type = this._cases.get(value.$).type;
+        return [value.$, getType(type).from(value, warn)];
+      } else {
+        for (const [name, { type, test }] of this._cases) {
+          if (test == null) continue ;
+          if (!test.call(this, value)) continue ;
+          return [name, getType(type).from(value, warn)];
+        }
+        if (this._defaultCase != null) {
+          return [this._defaultCase.name, this._defaultCase.from(value, warn)];
+        }
+      }
+      return [null, null];
+    })();
+    if (result != null) {
+      _Object.defineProperty
+      ( result, '$', { value: $, configurable: true, enumerable: true, writable: false }
+      );
     }
-    return null;
+    return result;
   });
 
 // Collection
