@@ -1,13 +1,13 @@
 const { AggregateRoot, Entity, Record, Map, Array, Set, Sum, Tuple, Object
-      , Enum, String, Number, Boolean, Value, Date, Time, DateTime
+      , Enum, String, Number, Boolean, Any, Date, Time, DateTime
       , _Date, _Array, _Set, _Map
       }      = require('..');
 const assert = require('assert');
 
-describe('Value', function () {
+describe('Any', function () {
   describe('about location', function () {
     const fakepath = '/tmp/Context/Aggregate.groupment.js';
-    class Order extends Value.locate(fakepath) {};
+    class Order extends Any.locate(fakepath) {};
     it('should contains _source', function () {
       assert.equal(Order._source, fakepath);
     });
@@ -98,7 +98,7 @@ describe('Sum', function () {
   describe('kind of accepted values', function () {
     it('should accept anonymous types', function () {
       class T extends Sum.either('A', Object.add('f', String)) {};
-      assert.deepEqual(T.from({ $: 'A', f: '42' }), { $: 'A', f: '42' });
+      assert.deepEqual(T.from({ _: 'A', f: '42' }), { _: 'A', f: '42' });
     });
 
     it('should accept name based value', function () {
@@ -106,8 +106,8 @@ describe('Sum', function () {
         .either('A', Object.add('f', String))
         .either('B', Object.add('f', Number))
       {};
-      assert.deepEqual(T.from({ $: 'A', f: 42 }), { $: 'A', f: '42' });
-      assert.deepEqual(T.from({ $: 'B', f: '42' }), { $: 'B', f: 42 });
+      assert.deepEqual(T.from({ _: 'A', f: 42 }), { _: 'A', f: '42' });
+      assert.deepEqual(T.from({ _: 'B', f: '42' }), { _: 'B', f: 42 });
     });
 
     it('should not accept undeclared content', function () {
@@ -130,7 +130,7 @@ describe('Sum', function () {
         static toString(data) { return data.foo + 1; }
       }
       class S extends Sum.either('U', U).either('T', T) {};
-      assert.equal(S.from({ $: 'T', field: 'hello' }).toString(), "hell'o");
+      assert.equal(S.from({ _: 'T', field: 'hello' }).toString(), "hell'o");
     });
   });
 
@@ -235,24 +235,24 @@ describe('Object', function () {
     });
   });
 
-  describe('$', function () {
+  describe('_', function () {
     it('should has default Object', function () {
       const T = Object.add('field', Boolean.mayNull);
-      assert.equal(T.from({}).$, 'Object');
+      assert.equal(T.from({})._, 'Object');
     });
     it('should has named Type', function () {
       class Type extends Object.add('field', Boolean.mayNull) {};
-      assert.equal(Type.from({}).$, 'Type');
+      assert.equal(Type.from({})._, 'Type');
     });
     it('should be serializable', function () {
-      assert.equal(JSON.stringify(Object.from({})), '{"$":"Object"}');
+      assert.equal(JSON.stringify(Object.from({})), '{"_":"Object"}');
     });
   });
 
   describe('fields', function () {
     it('should reject non declared fields', function () {
       const T = Object.add('field', Number);
-      assert.deepEqual(T.from({ field: 42, extra: 'not expected' }), { $: 'Object', field: 42 });
+      assert.deepEqual(T.from({ field: 42, extra: 'not expected' }), { _: 'Object', field: 42 });
     });
   });
 
@@ -271,7 +271,7 @@ describe('Object', function () {
     class T extends Object.add('f', () => F) {};
     const F = Boolean;
     const value = T.from({ f: 'YES' });
-    assert.deepEqual(value, { $: 'T', f: true });
+    assert.deepEqual(value, { _: 'T', f: true });
   });
 
 });

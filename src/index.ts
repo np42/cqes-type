@@ -1,7 +1,8 @@
-import { v4 as uuid }    from 'uuid';
+import { v4 as uuid }      from 'uuid';
 import { isConstructor, isLambda
-       }                 from 'cqes-util';
-import { inspect }       from 'util';
+       }                   from 'cqes-util';
+import { MatchAny, PM, K } from 'cqes-match';
+import { inspect }         from 'util';
 
 // TODO:
 //  > Add Range Type: 5-10, 5 or more, 10 or less, not between 5-10
@@ -9,6 +10,8 @@ import { inspect }       from 'util';
 
 const TYPE_TAG      = Symbol('cqes-type');
 const GETTER_PREFIX = '__get_';
+
+const knowledge = { String: {}, Object: {} };
 
 export const _Boolean  = globalThis.Boolean;
 export const _Number   = globalThis.Number;
@@ -79,10 +82,10 @@ export function isType(Type: any, name?: string): Type is Typer {
   return Type.name === name;
 }
 
-export function getType(value: any): IValue {
+export function getType(value: any): IAny {
   if (isType(value)) return <any>value;
   if (isLambda(value)) return value();
-  return Value;
+  return Any;
 }
 
 const toStringMethodProperty = { configurable: true, writable: true, enumerable: false, value: function () {
@@ -91,8 +94,8 @@ const toStringMethodProperty = { configurable: true, writable: true, enumerable:
 } };
 
 
-// Value
-export interface IValue<A = any> {
+// Any
+export interface IAny<A = any> {
   (...types: any[]):  this;
   new ():             A;
 
@@ -101,7 +104,7 @@ export interface IValue<A = any> {
   _postRewriters: Array<postRewriter<any>>;
   _parsers:       Array<any>;
   _assertions:    Array<any>;
-  _cache:         Map<string, IValue<A>>;
+  _cache:         Map<string, IAny<A>>;
   _source?:       string;
   _fqnBase?:      string;
 
@@ -131,13 +134,18 @@ export interface IValue<A = any> {
   walk<X>(this: new (x?: A) => X, data: X, iter: string, key?: any, ...args: Array<any>): X;
 }
 
-export type ILazyValue = IValue | (() => IValue);
+export type ILazyAny = IAny | (() => IAny);
 
-export const Value = <IValue><unknown>function Value() {};
+export const Any = <IAny><unknown>function Any() {};
 
-tagCQESType(Value);
+/**  DEPRECATED */
+/**/ export type IValue<T = any> = IAny<T>;
+/**/ export const Value = Any;
+/****************/
 
-Value.defineProperty = function defineProperty(name: string, value: any, isGetter?: boolean) {
+tagCQESType(Any);
+
+Any.defineProperty = function defineProperty(name: string, value: any, isGetter?: boolean) {
   if (isGetter) {
     if (typeof value === 'function' && value.length === 0) {
       const indirection = GETTER_PREFIX + name;
@@ -163,16 +171,16 @@ Value.defineProperty = function defineProperty(name: string, value: any, isGette
   }
 };
 
-Value.defineProperty('_preRewriters',  new _Array());
-Value.defineProperty('_postRewriters', new _Array());
-Value.defineProperty('_parsers',       new _Array());
-Value.defineProperty('_assertions',    new _Array());
+Any.defineProperty('_preRewriters',  new _Array());
+Any.defineProperty('_postRewriters', new _Array());
+Any.defineProperty('_parsers',       new _Array());
+Any.defineProperty('_assertions',    new _Array());
 
-Value.defineProperty('type', function type() {
+Any.defineProperty('type', function type() {
   return this;
 });
 
-Value.defineProperty('extends', function extend(name: string, exclude?: Array<string>) {
+Any.defineProperty('extends', function extend(name: string, exclude?: Array<string>) {
   const value = makeConstructor(name);
   tagCQESType(value);
   let parent = this;
@@ -216,14 +224,14 @@ Value.defineProperty('extends', function extend(name: string, exclude?: Array<st
   return value;
 });
 
-Value.defineProperty('clone', function clone(modifier?: (a: any) => any, exclude?: Array<string>) {
+Any.defineProperty('clone', function clone(modifier?: (a: any) => any, exclude?: Array<string>) {
   const value = this.extends(this.name, exclude);
   if (modifier) modifier.call(null, value);
   return value;
 });
 
-Value.defineProperty('locate', function locate(filepath: string) {
-  return this.clone((type: IValue) => {
+Any.defineProperty('locate', function locate(filepath: string) {
+  return this.clone((type: IAny) => {
     type._source = filepath;
     type._fqnBase = filepath.split('/').reverse().reduce((fqn, fullname) => {
       const name = fullname.split('.').shift();
@@ -233,30 +241,30 @@ Value.defineProperty('locate', function locate(filepath: string) {
   });
 });
 
-Value.defineProperty('fqn', function fqn() {
+Any.defineProperty('fqn', function fqn() {
   return this._fqnBase != null ? this._fqnBase + ':' + this.name : this.name;
 }, true);
 
-Value.defineProperty('of', function of(model?: any, ...rest: any[]) {
+Any.defineProperty('of', function of(model?: any, ...rest: any[]) {
   if (model && model[TYPE_TAG]) return model;
   if (isConstructor(model)) throw new Error(model.name + ' is not a valid type, forgot an import ?');
-  throw new Error('Value can not hold value');
+  throw new Error('Any can not hold value');
 });
 
-Value.defineProperty('setProperty', function setProperty(name: string, value: any, isGetter?: boolean) {
-  return this.clone((type: IValue) => {
+Any.defineProperty('setProperty', function setProperty(name: string, value: any, isGetter?: boolean) {
+  return this.clone((type: IAny) => {
     type.defineProperty(name, value, isGetter);
   });
 });
 
-Value.defineProperty('unsetProperty', function unsetProperty(name: string) {
+Any.defineProperty('unsetProperty', function unsetProperty(name: string) {
   return this.clone(null, [name]);
 });
 
-Value.defineProperty('setDefault', function setDefault(defaultValue: any) {
-  return this.clone((type: IValue) => {
+Any.defineProperty('setDefault', function setDefault(defaultValue: any) {
+  return this.clone((type: IAny) => {
     if (isType(defaultValue)) {
-      type._default = () => (<IValue>defaultValue)._default();
+      type._default = () => (<IAny>defaultValue)._default();
     } else if (isConstructor(defaultValue)) {
       type._default = () => new defaultValue();
     } else if (typeof defaultValue === 'function') {
@@ -267,32 +275,32 @@ Value.defineProperty('setDefault', function setDefault(defaultValue: any) {
   });
 });
 
-Value.defineProperty('mayNull', function mayNull() {
+Any.defineProperty('mayNull', function mayNull() {
   return this.setDefault(null);
 }, true);
 
-Value.defineProperty('addPreRewriter', function rewrite<T>(rewriter: preRewriter<T>) {
+Any.defineProperty('addPreRewriter', function rewrite<T>(rewriter: preRewriter<T>) {
   if (rewriter == null) throw new Error('Require a function');
-  return this.clone((type: IValue) => {
+  return this.clone((type: IAny) => {
     type._preRewriters.push(rewriter);
   });
 });
 
-Value.defineProperty('addPostRewriter', function rewrite<T>(rewriter: postRewriter<T>) {
+Any.defineProperty('addPostRewriter', function rewrite<T>(rewriter: postRewriter<T>) {
   if (rewriter == null) throw new Error('Require a function');
-  return this.clone((type: IValue) => {
+  return this.clone((type: IAny) => {
     type._postRewriters.unshift(rewriter);
   });
 });
 
-Value.defineProperty('addParser', function addParser<T>(parser: parser<T>) {
+Any.defineProperty('addParser', function addParser<T>(parser: parser<T>) {
   if (parser == null) throw new Error('Require a function');
-  return this.clone((value: IValue) => value._parsers.unshift(parser));
+  return this.clone((value: IAny) => value._parsers.unshift(parser));
 });
 
-Value.defineProperty('addConstraint', function addConstraint<T>(constraint: constraint<T>) {
+Any.defineProperty('addConstraint', function addConstraint<T>(constraint: constraint<T>) {
   if (constraint == null) throw new Error('Require a defined constraint');
-  return this.clone((value: IValue) => {
+  return this.clone((value: IAny) => {
     if (typeof constraint === 'function')
       value._assertions.push(constraint);
     else if (constraint instanceof RegExp)
@@ -311,7 +319,7 @@ Value.defineProperty('addConstraint', function addConstraint<T>(constraint: cons
   });
 });
 
-Value.defineProperty('test', function test(value: any) {
+Any.defineProperty('test', function test(value: any) {
   try {
     if (this.from(value) != null)
       return true;
@@ -320,7 +328,7 @@ Value.defineProperty('test', function test(value: any) {
   return false;
 });
 
-Value.defineProperty('from', function from(value?: any, warn?: warn) {
+Any.defineProperty('from', function from(value?: any, warn?: warn) {
   for (let i = 0; i < this._preRewriters.length; i += 1)
     value = this._preRewriters[i].call(this, value);
   const preparedValue = value;
@@ -350,7 +358,7 @@ Value.defineProperty('from', function from(value?: any, warn?: warn) {
   return value;
 });
 
-Value.defineProperty('compare', function compare(from: any, to: any) {
+Any.defineProperty('compare', function compare(from: any, to: any) {
   if (from === to) return 0;
   if (from == null && to == null) return 0;
   if (typeof from === 'number' && typeof to === 'number')
@@ -358,7 +366,7 @@ Value.defineProperty('compare', function compare(from: any, to: any) {
   return 1;
 });
 
-Value.defineProperty('walk', function walk<A>(data: A, iter: string, key: any, ...args: Array<any>): A {
+Any.defineProperty('walk', function walk<A>(data: A, iter: string, key: any, ...args: Array<any>): A {
   if (typeof this[iter] === 'function') {
     const value = this[iter].call(this, data, args[0], key, ...args.slice(1));
     if (value !== undefined && value != data) data = value;
@@ -371,12 +379,12 @@ Value.defineProperty('walk', function walk<A>(data: A, iter: string, key: any, .
 });
 
 // Boolean
-export interface IBoolean extends IValue<Boolean> {
+export interface IBoolean extends IAny<Boolean> {
   _true:  Set<string>;
   _false: Set<string>;
 }
 
-export const Boolean = (<IBoolean>Value.extends('Boolean'))
+export const Boolean = (<IBoolean>Any.extends('Boolean'))
   .setProperty('_true', new _Set(['1', 'y', 'yes', 'true', 'on']))
   .setProperty('_false', new _Set(['', '0', 'n', 'no', 'false', 'off']))
   .addParser(function (value: string) {
@@ -393,7 +401,7 @@ export const Boolean = (<IBoolean>Value.extends('Boolean'))
   });
 
 // Number
-export interface INumber extends IValue<Number> {
+export interface INumber extends IAny<Number> {
   between<T>(this: T, min: number, max: number): T;
   greater<T>(this: T, limit: number): T;
   lesser<T>(this: T, limit: number): T;
@@ -402,7 +410,7 @@ export interface INumber extends IValue<Number> {
   natural:  this;
 }
 
-export const Number = (<INumber>Value.extends('Number'))
+export const Number = (<INumber>Any.extends('Number'))
   .setProperty('between', function between(min: number, max: number) {
     return this.addConstraint(function isBetween(value: number) {
       return value >= min && value <= max;
@@ -443,12 +451,12 @@ export const Number = (<INumber>Value.extends('Number'))
   });
 
 // String
-export interface IString extends IValue<String> {
+export interface IString extends IAny<String> {
   notEmpty: this;
   notBlank: this;
 }
 
-export const String = (<IString>Value.extends('String'))
+export const String = (<IString>Any.extends('String'))
   .setProperty('notEmpty', function notEmpty() {
     return this.addConstraint((value: string) => _String(value) !== '');
   }, true)
@@ -465,7 +473,7 @@ export const String = (<IString>Value.extends('String'))
   });
 
 // Enum
-export interface IEnum extends IValue<String> {
+export interface IEnum extends IAny<String> {
   _iterTests: Array<[(val: any) => boolean, any]>;
   _strTests:  { [key: string]: any };
   _sensitive: boolean;
@@ -475,7 +483,7 @@ export interface IEnum extends IValue<String> {
   as<T>(this: T, value: any, ...tests: Array<any>): T;
 }
 
-export const Enum = (<IEnum>Value.extends('Enum'))
+export const Enum = (<IEnum>Any.extends('Enum'))
   .setProperty('_iterTests', [])
   .setProperty('_strTests',  {})
   .setProperty('_sensitive', false)
@@ -545,52 +553,55 @@ export const Enum = (<IEnum>Value.extends('Enum'))
   });
 
 // Sum
-export interface ISum extends IValue<{ $: string }> {
-  _cases:        Map<string, { type: IObject, test: predicate<any> }>;
-  _defaultCase?: IValue;
+export interface ISum extends IAny<{ _: string }> {
+  _cases:        Map<string, { type: IObject, test: PM }>;
+  _defaultCase?: IAny;
   mayEmpty:      this;
-  either<T>(this: T, name: string | IObject, type?: IObject): T;
+  either<T>(this: T, name: string, type: IObject, test?: any): T;
 }
 
-export const Sum = (<ISum>Value.extends('Sum'))
+export const Sum = (<ISum>Any.extends('Sum'))
   .setProperty('_cases', new _Map())
-  .setProperty('either', function either<T>(name: string, type: IObject, test?: predicate<T>) {
+  .setProperty('either', function either<T>(name: string, type: IObject, testPattern?: any) {
     if (this._cases.has(name)) throw new Error('this case already exists');
-    return this.clone((sum: ISum) => { sum._cases.set(name, { type, test }); });
+    return this.clone((sum: ISum) => {
+      const test = typeof testPattern !== 'undefined' ? new MatchAny(knowledge, testPattern) : null;
+      sum._cases.set(name, { type, test });
+    });
   })
   .setProperty('mayEmpty', function mayEmpty() {
     return this.setDefault(() => new class Undefined {});
   }, true)
   .setProperty('compare', function compare(from: any, to: any) {
-    if (to && to.$) return this._cases.get(to.$).compare(from, to);
+    if (to && to._) return this._cases.get(to._).compare(from, to);
     return 1;
   })
   .setProperty('walk', function walk<A>(data: any, iter: string, key: any, ...args: Array<any>): A {
-    if (data == null) data = <any>({ $: null });
+    if (data == null) data = <any>({ _: null });
     if (typeof this[iter] === 'function') {
-      const value = this[iter].call(this, data.$, args[0], key, ...args.slice(1));
-      if (typeof value === 'string') data.$ = value;
+      const value = this[iter].call(this, data._, args[0], key, ...args.slice(1));
+      if (typeof value === 'string') data._ = value;
     }
-    if (this._cases.has(data.$) && typeof data.$ === 'string') {
-      const value = this._cases.get(data.$).walk(data, iter, key, ...args);
+    if (this._cases.has(data._) && typeof data._ === 'string') {
+      const value = this._cases.get(data._).walk(data, iter, key, ...args);
       if (value !== undefined && value != data) data = value;
     }
     if (typeof this[iter + '_after'] === 'function') {
       const value = this[iter + '_after'].call(this, data, args[0], key, ...args.slice(1));
       if (value !== undefined && value != data) data = value;
     }
-    if (data.$ != null) return data;
+    if (data._ != null) return data;
     return null;
   })
   .addParser(function parseValue(value: any, warn?: warn) {
-    const [$, result] = (() => {
-      if (typeof value === 'object' && this._cases.has(value.$)) {
-        const type = this._cases.get(value.$).type;
-        return [value.$, getType(type).from(value, warn)];
+    const [_, result] = (() => {
+      if (typeof value === 'object' && this._cases.has(value._)) {
+        const type = this._cases.get(value._).type;
+        return [value._, getType(type).from(value, warn)];
       } else {
         for (const [name, { type, test }] of this._cases) {
           if (test == null) continue ;
-          if (!test.call(this, value)) continue ;
+          if (!test.test(value)) continue ;
           return [name, getType(type).from(value, warn)];
         }
         if (this._defaultCase != null) {
@@ -601,18 +612,18 @@ export const Sum = (<ISum>Value.extends('Sum'))
     })();
     if (result != null) {
       _Object.defineProperty
-      ( result, '$', { value: $, configurable: true, enumerable: true, writable: false }
+      ( result, '_', { value: _, configurable: true, enumerable: true, writable: false }
       );
     }
     return result;
   });
 
 // Collection
-export interface ICollection<A> extends IValue<A> {
+export interface ICollection<A> extends IAny<A> {
   notEmpty: this;
 }
 
-export const Collection = (<ICollection<any>>Value.extends('Collection'))
+export const Collection = (<ICollection<any>>Any.extends('Collection'))
   .setProperty('notEmpty', function notEmpty() {
     throw new Error('Not implemented');
   }, true)
@@ -621,7 +632,7 @@ export const Collection = (<ICollection<any>>Value.extends('Collection'))
 // Set
 export interface ISet extends ICollection<Set<any>> {
   _constructor: { new (): Set<any> };
-  _subtype: IValue;
+  _subtype: IAny;
   from<X>(this: new () => X, data: Set<any> | Array<any>, warn?: warn): X;
   has(source: Set<any>, value: any): boolean;
   compare(from: Set<any>, to: Set<any>): number;
@@ -704,7 +715,7 @@ export const Set = (<ISet>Collection.extends('Set'))
 // Array
 export interface IArray extends ICollection<Array<any>> {
   _constructor: { new (): Array<any> };
-  _subtype:     IValue;
+  _subtype:     IAny;
   compare(from: Array<any>, to: Array<any>): number;
 }
 
@@ -771,8 +782,8 @@ export const Array = (<IArray>Collection.extends('Array'))
 // Map
 export interface IMap extends ICollection<Map<any, any>> {
   _constructor: { new (): Map<any, any> };
-  _index:       ILazyValue;
-  _subtype:     ILazyValue;
+  _index:       ILazyAny;
+  _subtype:     ILazyAny;
   toJSON: (this: Map<any, any>) => any;
 
   compare(from: Map<any, any>, to: Map<any, any>): number;
@@ -860,7 +871,7 @@ export const Map = (<IMap>Collection.extends('Map'))
 // Tuple
 export interface ITuple extends ICollection<any[]> {
   _constructor: { new (): any[] };
-  _types:       Array<ILazyValue>;
+  _types:       Array<ILazyAny>;
   compare(from: any[], to: any[]): number;
 }
 
@@ -914,7 +925,7 @@ export const Tuple = (<ITuple>Collection.extends('Tuple'))
 // Record
 export interface IRecord<R = {}> extends ICollection<R & { [name: string]: any }> {
   _constructor: { new (): R & { [name: string]: any } };
-  _members:     Map<string, { type: ILazyValue, postfill?: { filler: filler, enumerable: boolean } }>;
+  _members:     Map<string, { type: ILazyAny, postfill?: { filler: filler, enumerable: boolean } }>;
   _keepNull:    boolean;
   _collapse:    boolean;
   mayEmpty: this;
@@ -982,7 +993,7 @@ export const Record = (<IRecord>Collection.extends('Record'))
   })
   .addParser(function parseRecord(data: any, warn?: warn) {
     const result = new this();
-    const fillers = <{ [name: string]: { type: IValue, postfill: filler, enumerable: boolean } }>{};
+    const fillers = <{ [name: string]: { type: IAny, postfill: filler, enumerable: boolean } }>{};
     for (const [name, { type, postfill }] of this._members) {
       const _type = getType(type);
       try {
@@ -1025,7 +1036,7 @@ export const Record = (<IRecord>Collection.extends('Record'))
   });
 
 // Object
-export interface IObject extends Exclude<IRecord<{ $: string }>, 'mayEmpty'> {
+export interface IObject extends Exclude<IRecord<{ _: string }>, 'mayEmpty'> {
 }
 
 export const Object = (<IObject>Record.extends('Object'))
@@ -1034,7 +1045,7 @@ export const Object = (<IObject>Record.extends('Object'))
   .keepNull
   .addPostRewriter(function (data: any) {
     const output = new this();
-    const descriptors = { $: { value: this.name, configurable: true, enumerable: true, writable: false }
+    const descriptors = { _: { value: this.name, configurable: true, enumerable: true, writable: false }
                         , ..._Object.getOwnPropertyDescriptors(data)
                         };
     _Object.defineProperties(output, descriptors);
@@ -1146,7 +1157,7 @@ export interface IDateTime extends IString {
   mayNow: this;
 }
 
-export const DateTime = (<IDateTime>Value.extends('DateTime'))
+export const DateTime = (<IDateTime>Any.extends('DateTime'))
   .setProperty('mayNow', function mayNow() {
     return this.setDefault(() => new _Date());
   }, true)
