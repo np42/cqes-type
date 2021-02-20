@@ -84,7 +84,7 @@ export function isType(Type: any, name?: string): Type is Typer {
 
 export function getType(value: any): IAny {
   if (isType(value)) return <any>value;
-  if (isLambda(value)) return value();
+  if (isLambda(value)) return getType(value());
   return Any;
 }
 
@@ -96,7 +96,6 @@ const toStringMethodProperty = { configurable: true, writable: true, enumerable:
 
 // Any
 export interface IAny<A = any> {
-  (...types: any[]):  this;
   new ():             A;
 
   _default:       (input?: any) => A;
@@ -134,7 +133,9 @@ export interface IAny<A = any> {
   walk<X>(this: new (x?: A) => X, data: X, iter: string, key?: any, ...args: Array<any>): X;
 }
 
-export type ILazyAny = IAny | (() => IAny);
+export type MayLazy<T> = T | (() => T);
+
+export type ILazyAny = MayLazy<IAny>;
 
 export const Any = <IAny><unknown>function Any() {};
 
@@ -554,10 +555,10 @@ export const Enum = (<IEnum>Any.extends('Enum'))
 
 // Sum
 export interface ISum extends IAny<{ _: string }> {
-  _cases:        Map<string, { type: IObject, test: PM }>;
+  _cases:        Map<string, { type: MayLazy<IObject>, test: PM }>;
   _defaultCase?: IAny;
   mayEmpty:      this;
-  either<T>(this: T, name: string, type: IObject, test?: any): T;
+  either<T>(this: T, name: string, type: MayLazy<IObject>, test?: any): T;
 }
 
 export const Sum = (<ISum>Any.extends('Sum'))
@@ -620,6 +621,7 @@ export const Sum = (<ISum>Any.extends('Sum'))
 
 // Collection
 export interface ICollection<A> extends IAny<A> {
+  (...types: any[]):  this;
   notEmpty: this;
 }
 
@@ -632,7 +634,7 @@ export const Collection = (<ICollection<any>>Any.extends('Collection'))
 // Set
 export interface ISet extends ICollection<Set<any>> {
   _constructor: { new (): Set<any> };
-  _subtype: IAny;
+  _subtype: ILazyAny;
   from<X>(this: new () => X, data: Set<any> | Array<any>, warn?: warn): X;
   has(source: Set<any>, value: any): boolean;
   compare(from: Set<any>, to: Set<any>): number;
@@ -715,7 +717,7 @@ export const Set = (<ISet>Collection.extends('Set'))
 // Array
 export interface IArray extends ICollection<Array<any>> {
   _constructor: { new (): Array<any> };
-  _subtype:     IAny;
+  _subtype:     ILazyAny;
   compare(from: Array<any>, to: Array<any>): number;
 }
 
@@ -923,7 +925,7 @@ export const Tuple = (<ITuple>Collection.extends('Tuple'))
 ;
 
 // Record
-export interface IRecord<R = {}> extends ICollection<R & { [name: string]: any }> {
+export interface IRecord<R = {}> extends IAny<R & { [name: string]: any }> {
   _constructor: { new (): R & { [name: string]: any } };
   _members:     Map<string, { type: ILazyAny, postfill?: { filler: filler, enumerable: boolean } }>;
   _keepNull:    boolean;
@@ -936,7 +938,7 @@ export interface IRecord<R = {}> extends ICollection<R & { [name: string]: any }
   postfill<T>(this: T, field: string, filler: filler, enumerable?: boolean): T;
 }
 
-export const Record = (<IRecord>Collection.extends('Record'))
+export const Record = (<IRecord>Value.extends('Record'))
   .setProperty('_constructor', function () {
     return makeCollectionConstructor(this.name, _Object);
   }, true)
@@ -1036,8 +1038,7 @@ export const Record = (<IRecord>Collection.extends('Record'))
   });
 
 // Object
-export interface IObject extends Exclude<IRecord<{ _: string }>, 'mayEmpty'> {
-}
+export interface IObject extends Exclude<IRecord<{ _: string }>, 'mayEmpty'> {}
 
 export const Object = (<IObject>Record.extends('Object'))
   .unsetProperty('mayEmpty')
