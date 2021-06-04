@@ -96,7 +96,7 @@ const toStringMethodProperty = { configurable: true, writable: true, enumerable:
 
 // Any
 export interface IAny<A = any> {
-  new ():             A;
+  new ():         A;
 
   _default:       (input?: any) => A;
   _preRewriters:  Array<preRewriter<any>>;
@@ -925,7 +925,7 @@ export const Tuple = (<ITuple>Collection.extends('Tuple'))
 ;
 
 // Record
-export interface IRecord<R = {}> extends IAny<R & { [name: string]: any }> {
+export interface IRecord<R = {}> extends IAny<R> {
   _constructor: { new (): R & { [name: string]: any } };
   _members:     Map<string, { type: ILazyAny, postfill?: { filler: filler, enumerable: boolean } }>;
   _keepNull:    boolean;
