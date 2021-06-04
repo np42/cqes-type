@@ -715,8 +715,8 @@ export const Set = (<ISet>Collection.extends('Set'))
 ;
 
 // Array
-export interface IArray extends ICollection<Array<any>> {
-  _constructor: { new (): Array<any> };
+export interface IArray<T = any> extends ICollection<Array<T>> {
+  _constructor: { new (): Array<T> };
   _subtype:     ILazyAny;
   compare(from: Array<any>, to: Array<any>): number;
 }
@@ -1179,5 +1179,5 @@ export const DateTime = (<IDateTime>Any.extends('DateTime'))
 
 // Words
 
-export class Done     extends Record.setDefault({}) {};
-export class NotFound extends Record.setDefault({}) {};
+export class Done     extends Record.setProperty('_collapse', false).setDefault({}) {};
+export class NotFound extends Record.setProperty('_collapse', false).setDefault({}) {};
