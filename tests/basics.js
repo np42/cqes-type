@@ -46,6 +46,28 @@ describe('DateTime', function () {
 
 });
 
+describe('Time', function () {
+
+  describe('Invalid Time', function () {
+    it('should return null', function () {
+      assert.equal(Time.mayNull.from('25:41:00'), null);
+    });
+  });
+
+  describe('Normal Time', function () {
+    it('should parse type', function () {
+      assert.equal(Time.from('12:45:32'), '12:45:32');
+    });
+  });
+
+  describe('Time without second', function () {
+    it('should parse type', function () {
+      assert.equal(Time.from('15:22'), '15:22:00');
+    });
+  });
+
+});
+
 describe('Enum', function () {
   const T = Enum.as('A').as('B');
 
@@ -148,6 +170,23 @@ describe('Set', function () {
 
 });
 
+describe('Set(Enum)', function () {
+
+  it('should accept all values', function () {
+    const SE = Set(Enum.of('A', 'B', 'C'));
+    assert.deepEqual(SE.from(['A', 'B', 'C']), new _Set(['A', 'B', 'C']));
+  });
+
+  it('should reject if one value not declared in enum', function () {
+    const SE = Set(Enum.of('A', 'B', 'C'));
+    try { SE.from(['A', 'C', 'D']); }
+    catch (e) { return ; }
+    throw new Error('Exception expected');
+  });
+
+});
+
+
 describe('Array', function () {
 
   describe('subtype', function () {
@@ -183,12 +222,12 @@ describe('Tuple', function () {
 describe('Record', function () {
 
   describe('empty / not empty', function () {
-    it('sould collapse on empty Record', function () {
-      class Shape extends Record.add('field', Boolean.mayNull) {};
-      assert.equal(Shape.from({}), null)
+    it('should collapse on empty Record', function () {
+      class Shape extends Record.setProperty('_collapse', true).add('field', Boolean.mayNull) {};
+      assert.equal(Shape.from({}), null);
     });
     class Shape2 extends Record
-      .add('field1', Record.add('sub', String.mayNull).mayNull)
+      .add('field1', Record.setProperty('_collapse', true).add('sub', String.mayNull).mayNull)
       .add('field2', String)
     {}
     it('should collapse empty field if missing', function () {
@@ -235,7 +274,7 @@ describe('Object', function () {
     });
   });
 
-  describe('_', function () {
+  describe('_ (Underscore)', function () {
     it('should has default Object', function () {
       const T = Object.add('field', Boolean.mayNull);
       assert.equal(T.from({})._, 'Object');

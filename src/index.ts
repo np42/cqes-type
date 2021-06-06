@@ -139,11 +139,6 @@ export type ILazyAny = MayLazy<IAny>;
 
 export const Any = <IAny><unknown>function Any() {};
 
-/**  DEPRECATED */
-/**/ export type IValue<T = any> = IAny<T>;
-/**/ export const Value = Any;
-/****************/
-
 tagCQESType(Any);
 
 Any.defineProperty = function defineProperty(name: string, value: any, isGetter?: boolean) {
@@ -482,12 +477,13 @@ export interface IEnum extends IAny<String> {
   _first:     null;
   strict:     this;
   as<T>(this: T, value: any, ...tests: Array<any>): T;
+  of<T>(this: T, ...values: Array<any>): T
 }
 
 export const Enum = (<IEnum>Any.extends('Enum'))
   .setProperty('_iterTests', [])
   .setProperty('_strTests',  {})
-  .setProperty('_sensitive', false)
+  .setProperty('_sensitive', true)
   .setProperty('_notrim',    false)
   .setProperty('_first',     null)
   .setProperty('_default', function (value: any) {
@@ -529,6 +525,12 @@ export const Enum = (<IEnum>Any.extends('Enum'))
       }
     });
   })
+  .setProperty('of', function addCases(...values: Array<any>) {
+    let result = this;
+    for (const value of values)
+      result = result.as(value);
+    return result;
+  })
   .addParser(function parseValue(input: any) {
     let search = input;
     switch (typeof input) {
@@ -544,7 +546,7 @@ export const Enum = (<IEnum>Any.extends('Enum'))
     if (this._strTests[search] != null)
       return this._strTests[search];
     if (/^\s*$/.test(search)) return this._default();
-    return null;
+    throw new TypeError('Value not declared in Enum');
   })
   .addConstraint(function mustBeInRange(value: any) {
     for (const parser of this._parsers)
@@ -651,11 +653,6 @@ export const Set = (<ISet>Collection.extends('Set'))
   })
   .setProperty('toJSON', function toJSON() {
     return _Array.from(this);
-  })
-  .setDefault(function () {
-    const set = new _Set();
-    _Object.defineProperty(set, 'toJSON', { value: this.toJSON });
-    return set;
   })
   .setProperty('notEmpty', function notEmpty() {
     return this.addConstraint(function notEmpty(value: any) {
@@ -930,21 +927,21 @@ export interface IRecord<R = {}> extends IAny<R> {
   _members:     Map<string, { type: ILazyAny, postfill?: { filler: filler, enumerable: boolean } }>;
   _keepNull:    boolean;
   _collapse:    boolean;
-  mayEmpty: this;
-  keepNull: this;
+  mayEmpty:     this;
+  keepNull:     this;
   compare(from: R & { [name: string]: any }, to: R & { [name: string]: any }): number;
   add<T>(this: T, field: string, type: any, virtual?: (value: any) => any): T;
   remove<T>(this: T, field: string): T;
   postfill<T>(this: T, field: string, filler: filler, enumerable?: boolean): T;
 }
 
-export const Record = (<IRecord>Value.extends('Record'))
+export const Record = (<IRecord>Any.extends('Record'))
   .setProperty('_constructor', function () {
     return makeCollectionConstructor(this.name, _Object);
   }, true)
   .setProperty('_members', new _Map())
   .setProperty('_keepNull', false)
-  .setProperty('_collapse', true)
+  .setProperty('_collapse', false)
   .setProperty('mayEmpty', function mayEmpty() {
     return this.setDefault(() => {});
   }, true)
@@ -1147,8 +1144,27 @@ export const Time = (<ITime>String.extends('Time'))
     if (!(value instanceof _Date)) return ;
     return value.toISOString().substr(11, 12);
   })
+  .addParser(function parseDate(value: any) {
+    if (typeof value !== 'string') return ;
+    const match = /^T?(\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{3}))?$/.exec(value);
+    if (match == null) throw new TypeError('Bad Time format');
+    const hours = _Number(match[1]);
+    if (!(hours >= 0 && hours < 24)) throw new TypeError('Bad Time format, hours out of range');
+    const minutes = _Number(match[2]);
+    if (!(minutes >= 0 && minutes <= 60)) throw new TypeError('Bad Time format, minutes out of range');
+    const seconds = match[3] == null ? 0 : _Number(match[3]);
+    if (!(seconds >= 0 && seconds <= 60)) throw new TypeError('Bad Time format, seconds out of range');
+    const miliseconds = match[4] == null ? 0 : _Number(match[4]);
+    if (!(miliseconds >= 0 && miliseconds < 1000)) throw new TypeError('Bad Time format, miliseconds out of range');
+    return ( [ _String(hours).padStart(2, '0')
+             , _String(minutes).padStart(2, '0')
+             , _String(seconds).padStart(2, '0')
+             ].join(':')
+           + ( miliseconds > 0 ? '.' + _String(miliseconds).padStart(3, '0') : '' )
+           );
+  })
   .addConstraint(function isTime(value: any) {
-    if (/^\d{2}-\d{2}-\d{2}(\.\d{3})?(Z|[+\-]\d+)?$/.test(value)) return ;
+    if (/^\d{2}:\d{2}:\d{2}(\.\d{3})?$/.test(value)) return ;
     throw new TypeError('Invalide Time format');
   });
 
@@ -1179,5 +1195,5 @@ export const DateTime = (<IDateTime>Any.extends('DateTime'))
 
 // Words
 
-export class Done     extends Record.setProperty('_collapse', false).setDefault({}) {};
-export class NotFound extends Record.setProperty('_collapse', false).setDefault({}) {};
+export class Done     extends Record.mayEmpty {};
+export class NotFound extends Record.mayEmpty {};
