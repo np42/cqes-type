@@ -1,6 +1,6 @@
 {
   "name": "cqes-type",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Typescript runtime typing library",
   "main": "dist/src/index.js",
   "repository": {

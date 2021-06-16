@@ -318,7 +318,8 @@ describe('Object', function () {
 describe('Json', function () {
 
   it('should parse json string', function () {
-    assert.deepEqual(Json.from('{"hello":"world","nested":[42]}'), { hello:'world', nested: [42] });
+    const str = '{"hello":"world","nested":[42]}';
+    assert.deepEqual(Json.from(str), str);
   });
 
   it('should reject not string input', function () {

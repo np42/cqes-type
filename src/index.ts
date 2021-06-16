@@ -1053,14 +1053,6 @@ export const Object = (<IObject>Record.extends('Object'))
     if (typeof data != 'object') throw new TypeError('Require an object');
   });
 
-export interface IJson extends IAny {}
-
-export const Json = (<IJson>Record.extends('Json'))
-  .addParser(function (input: any) {
-    if (typeof input !== 'string') throw new TypeError('Require a string');
-    return JSON.parse(input);
-  });
-
 
 // Entity
 export interface IEntity extends IRecord<{ _id?: any }> {}
@@ -1121,6 +1113,15 @@ export interface IURL extends IString {}
 
 export const URL = (<IURL>String.extends('URL'))
   .addConstraint(/^(?:http(s)?:\/\/)?[\w.-]+(?:\.[\w\.-]+)+[\w\-\._~:\/?#[\]@!\$&'\(\)\*\+,;=.]+$/)
+
+// Json
+export interface IJson extends IString {}
+
+export const Json = (<IJson>String.extends('Json'))
+  .addConstraint(function (input: string) {
+    if (typeof input !== 'string') throw new TypeError('Require a string');
+    JSON.parse(input);
+  });
 
 // Date
 export interface IDate extends IString {
