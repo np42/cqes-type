@@ -1,5 +1,5 @@
 const { AggregateRoot, Entity, Record, Map, Array, Set, Sum, Tuple, Object
-      , Enum, String, Number, Boolean, Any, Date, Time, DateTime
+      , Enum, String, Number, Boolean, Any, Date, Time, DateTime, Json
       , _Date, _Array, _Set, _Map
       }      = require('..');
 const assert = require('assert');
@@ -311,6 +311,26 @@ describe('Object', function () {
     const F = Boolean;
     const value = T.from({ f: 'YES' });
     assert.deepEqual(value, { _: 'T', f: true });
+  });
+
+});
+
+describe('Json', function () {
+
+  it('should parse json string', function () {
+    assert.deepEqual(Json.from('{"hello":"world","nested":[42]}'), { hello:'world', nested: [42] });
+  });
+
+  it('should reject not string input', function () {
+    try { Json.from({}); }
+    catch (e) { return ;}
+    throw new Error('Expect input not parsable');
+  });
+
+  it('should reject unparsable string', function () {
+    try { Json.from('1737e3c6-224b-49b0-b782-bc31af333fe4'); }
+    catch (e) { return ;}
+    throw new Error('Expect input not parsable');
   });
 
 });

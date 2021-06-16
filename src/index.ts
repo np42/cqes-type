@@ -1053,6 +1053,14 @@ export const Object = (<IObject>Record.extends('Object'))
     if (typeof data != 'object') throw new TypeError('Require an object');
   });
 
+export interface IJson extends IAny {}
+
+export const Json = (<IJson>Record.extends('Json'))
+  .addParser(function (input: any) {
+    if (typeof input !== 'string') throw new TypeError('Require a string');
+    return JSON.parse(input);
+  });
+
 
 // Entity
 export interface IEntity extends IRecord<{ _id?: any }> {}
@@ -1100,6 +1108,7 @@ export const UUID = (<IUUID>String.extends('UUID'))
     return this.setDefault(this._blank);
   }, true)
   .addConstraint(/^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i);
+
 
 // Email
 export interface IEmail extends IString {}
