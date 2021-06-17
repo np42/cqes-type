@@ -752,8 +752,8 @@ export const Array = (<IArray>Collection.extends('Array'))
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array)) return ;
     const array = new this._constructor();
+    const subtype = getType(this._subtype);
     for (let i = 0; i < data.length; i += 1) {
-      const subtype = getType(this._subtype);
       try { array[i] = subtype.from(data[i], warn); }
       catch (e) {
         const strval = JSON.stringify(data[i]);
