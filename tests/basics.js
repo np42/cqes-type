@@ -195,6 +195,13 @@ describe('Array', function () {
     });
   });
 
+  describe('post named type', function () {
+    it('should be renamed', function () {
+      const fqn = Array(Record.add('toto', String)).locate(__filename, 'NewName').fqn;
+      assert.deepEqual(fqn, ':NewName');
+    });
+  });
+
 });
 
 describe('Map', function () {
@@ -248,6 +255,10 @@ describe('Record', function () {
     it('should accept empty object', function () {
       class Test extends Record.add('f1', Enum.as('DefaultValue')) {};
       assert.deepEqual(Test.from({}), { f1: 'DefaultValue' });
+    });
+    it('should accept field alias name', function () {
+      const T = Record.add('f1', String, ['a', 'b', 'c']);
+      assert.deepEqual(T.from({ b: '42' }), { f1: '42' });
     });
   });
 

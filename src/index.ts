@@ -44,7 +44,7 @@ export type assertion<T>    = (this: T, a: any) => void;
 export type constraint<T>   = RegExp | predicate<T> | assertion<T>;
 export type parser<T>       = (this: T, a: any)       => any | void;
 export type warn            = (error: Error)          => void;
-export type filler          = (input: any)            => any;
+export type filler          = (input: any, source: any) => any;
 
 const makeConstructor = (name: string) => {
   if (!/^[a-z$_][a-z0-9$_]*$/i.test(name)) throw new Error('Bad name');
@@ -67,6 +67,15 @@ const makeCollectionConstructor = (name: string, collection: Function) => {
   )(collection);
 };
 
+const getFirstValue = (source: { [name: string]: any }, keys: Array<string>) => {
+  if (source == null) return null;
+  for (const key of keys) {
+    if (key in source)
+      return source[key];
+  }
+  return null;
+};
+
 const fnHasNativeProps = _Object.getOwnPropertyNames(function () {}).reduce((result, key) => {
   result[key] = true;
   return result;
@@ -82,9 +91,10 @@ export function isType(Type: any, name?: string): Type is Typer {
   return Type.name === name;
 }
 
-export function getType(value: any): IAny {
+export function getType(value: any, warn?: warn): IAny {
   if (isType(value)) return <any>value;
-  if (isLambda(value)) return getType(value());
+  if (isLambda(value)) return getType(value(), warn);
+  if (warn != null) warn(new Error('Unable to get type from: ' + value));
   return Any;
 }
 
@@ -128,7 +138,7 @@ export interface IAny<A = any> {
   fqn:      string;
 
   test(data: any): boolean;
-  from<X>(this: new (input?: A) => X, data?: A, warn?: warn): X;
+  from<X>(this: new (input?: any) => X, data?: any, warn?: warn): X;
   compare(from: any, to: any): number;
   walk<X>(this: new (x?: A) => X, data: X, iter: string, key?: any, ...args: Array<any>): X;
 }
@@ -226,15 +236,15 @@ Any.defineProperty('clone', function clone(modifier?: (a: any) => any, exclude?:
   return value;
 });
 
-Any.defineProperty('locate', function locate(filepath: string) {
-  return this.clone((type: IAny) => {
-    type._source = filepath;
-    type._fqnBase = filepath.split('/').reverse().reduce((fqn, fullname) => {
-      const name = fullname.split('.').shift();
-      if (/^[A-Z0-9]/.test(name)) fqn.unshift(name);
-      return fqn;
-    }, []).join(':');
-  });
+Any.defineProperty('locate', function locate(filepath: string, name?: string) {
+  const type = this.extends(name ?? this.name);
+  type._source = filepath;
+  type._fqnBase = filepath.split('/').reverse().reduce((fqn, fullname) => {
+    const name = fullname.split('.').shift();
+    if (/^[A-Z0-9]/.test(name)) fqn.unshift(name);
+    return fqn;
+  }, []).join(':');
+  return type;
 });
 
 Any.defineProperty('fqn', function fqn() {
@@ -600,12 +610,12 @@ export const Sum = (<ISum>Any.extends('Sum'))
     const [_, result] = (() => {
       if (typeof value === 'object' && this._cases.has(value._)) {
         const type = this._cases.get(value._).type;
-        return [value._, getType(type).from(value, warn)];
+        return [value._, getType(type, warn).from(value, warn)];
       } else {
         for (const [name, { type, test }] of this._cases) {
           if (test == null) continue ;
           if (!test.test(value)) continue ;
-          return [name, getType(type).from(value, warn)];
+          return [name, getType(type, warn).from(value, warn)];
         }
         if (this._defaultCase != null) {
           return [this._defaultCase.name, this._defaultCase.from(value, warn)];
@@ -700,7 +710,7 @@ export const Set = (<ISet>Collection.extends('Set'))
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array || data instanceof _Set)) return ;
     const set = new this._constructor();
-    const subtype = getType(this._subtype);
+    const subtype = getType(this._subtype, warn);
     for (const value of data)
       set.add(subtype.from(value, warn));
     _Object.defineProperty(set, 'toJSON', { value: this.toJSON });
@@ -752,7 +762,7 @@ export const Array = (<IArray>Collection.extends('Array'))
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array)) return ;
     const array = new this._constructor();
-    const subtype = getType(this._subtype);
+    const subtype = getType(this._subtype, warn);
     for (let i = 0; i < data.length; i += 1) {
       try { array[i] = subtype.from(data[i], warn); }
       catch (e) {
@@ -765,7 +775,7 @@ export const Array = (<IArray>Collection.extends('Array'))
   .addParser(function parseArray(data: any, warn?: warn) {
     if (typeof data !== 'string') return ;
     const array = new this._constructor();
-    const subtype = getType(this._subtype);
+    const subtype = getType(this._subtype, warn);
     const insert = (entries: Array<string>) => array.splice(0, 0, ...entries.map(x => subtype.from(x)))
     if (/\r?\n/.test(data))    insert(data.split(/\r?\n/));
     else if (/[,]/.test(data)) insert(data.split(/,\s*/));
@@ -850,8 +860,8 @@ export const Map = (<IMap>Collection.extends('Map'))
   .addParser(function parseArray(data: any, warn?: warn) {
     if (!(data instanceof _Array || data instanceof _Map)) return ;
     const map = new this._constructor();
-    const subtype = getType(this._subtype);
-    const indexType = getType(this._index);
+    const subtype = getType(this._subtype, warn);
+    const indexType = getType(this._index, warn);
     for (const [key, value] of data) {
       try { map.set(indexType.from(key, warn), subtype.from(value, warn)); }
       catch (e) {
@@ -909,7 +919,7 @@ export const Tuple = (<ITuple>Collection.extends('Tuple'))
     if (data == null) data = [];
     for (let i = 0; i < this._types.length; i += 1) {
       try {
-        const type = getType(this._types[i]);
+        const type = getType(this._types[i], warn);
         const value = type.from(data[i], warn);
         if (value != null) result[i] = value;
       } catch (e) {
@@ -930,7 +940,7 @@ export interface IRecord<R = {}> extends IAny<R> {
   mayEmpty:     this;
   keepNull:     this;
   compare(from: R & { [name: string]: any }, to: R & { [name: string]: any }): number;
-  add<T>(this: T, field: string, type: any, virtual?: (value: any) => any): T;
+  add<T>(this: T, field: string, type: any, virtual?: filler | Array<string>): T;
   remove<T>(this: T, field: string): T;
   postfill<T>(this: T, field: string, filler: filler, enumerable?: boolean): T;
 }
@@ -972,9 +982,14 @@ export const Record = (<IRecord>Any.extends('Record'))
     for (const any in data) return data;
     return null;
   })
-  .setProperty('add', function add(field: string, type: any, filler?: filler) {
+  .setProperty('add', function add(field: string, type: any, filler?: filler | Array<string>) {
     return this.clone((object: IRecord) => {
-      const postfill = filler != null ? { filler, enumerable: true } : null;
+      const enumerable = true;
+      const postfill = filler != null
+        ? ( filler instanceof _Array ? { filler: (r: any, s: any) => getFirstValue(s, filler), enumerable }
+          : { filler, enumerable }
+          )
+        : null;
       object._members.set(field, { type, postfill });
     });
   })
@@ -994,7 +1009,7 @@ export const Record = (<IRecord>Any.extends('Record'))
     const result = new this();
     const fillers = <{ [name: string]: { type: IAny, postfill: filler, enumerable: boolean } }>{};
     for (const [name, { type, postfill }] of this._members) {
-      const _type = getType(type);
+      const _type = getType(type, warn);
       try {
         const value = _type.from(data[name], warn);
         if (value != null || this._keepNull)
@@ -1012,7 +1027,7 @@ export const Record = (<IRecord>Any.extends('Record'))
       const { type, postfill, enumerable } = fillers[name];
       let value = null;
       try {
-        value = postfill.call(this, result);
+        value = postfill.call(this, result, data);
         value = type.from(value, warn);
         if (value != null) _Object.defineProperty(result, name, { value, enumerable, writable: true });
       } catch (e) {
@@ -1205,5 +1220,6 @@ export const DateTime = (<IDateTime>Any.extends('DateTime'))
 
 // Words
 
-export class Done     extends Record.mayEmpty {};
-export class NotFound extends Record.mayEmpty {};
+export class Done      extends Record.mayEmpty {};
+export class NotFound  extends Record.mayEmpty {};
+export class Unchanged extends Record.mayEmpty {};
