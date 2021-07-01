@@ -1,6 +1,7 @@
 const { AggregateRoot, Entity, Record, Map, Array, Set, Sum, Tuple, Object
       , Enum, String, Number, Boolean, Any, Date, Time, DateTime, Json
       , _Date, _Array, _Set, _Map
+      , isType
       }      = require('..');
 const assert = require('assert');
 
@@ -196,9 +197,13 @@ describe('Array', function () {
   });
 
   describe('post named type', function () {
+    const NewName = Array(Record.add('toto', String)).locate(__filename, 'NewName');
     it('should be renamed', function () {
-      const fqn = Array(Record.add('toto', String)).locate(__filename, 'NewName').fqn;
-      assert.deepEqual(fqn, ':NewName');
+      assert.deepEqual(NewName.fqn, ':NewName');
+    });
+    it('should conserve Type tag', function () {
+      const value = NewName.from([{ toto: '42' }]);
+      assert.deepEqual(isType(value.constructor), true);
     });
   });
 
@@ -259,6 +264,10 @@ describe('Record', function () {
     it('should accept field alias name', function () {
       const T = Record.add('f1', String, ['a', 'b', 'c']);
       assert.deepEqual(T.from({ b: '42' }), { f1: '42' });
+    });
+    it('should accept field alias path', function () {
+      const T = Record.add('f1', String, ['a.b.c']);
+      assert.deepEqual(T.from({ a: { b: { c: '42' } } }), { f1: '42' });
     });
   });
 

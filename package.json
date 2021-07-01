@@ -9,7 +9,8 @@
   },
   "keywords": [],
   "scripts": {
-    "test": "mocha tests"
+    "test": "mocha tests",
+    "test-debug": "mocha --inspect-brk tests"
   },
   "author": "Nicolas Pelletier <npelletier@apiculteur.io>",
   "license": "ISC",

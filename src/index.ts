@@ -1,5 +1,5 @@
 import { v4 as uuid }      from 'uuid';
-import { isConstructor, isLambda
+import { isConstructor, isLambda, get as getInObject
        }                   from 'cqes-util';
 import { MatchAny, PM, K } from 'cqes-match';
 import { inspect }         from 'util';
@@ -23,8 +23,12 @@ export const _Set      = globalThis.Set;
 export const _Array    = globalThis.Array;
 export const _Map      = globalThis.Map;
 
-export type Typer     = { from(data: any, warn?: warn): Typed, name: string, fqn?: string };
-export type Typed     = any;
+export interface Typer<T = any> {
+  new (...args: any[]): T;
+  from(data: any, warn?: warn): T;
+  name: string;
+  fqn?: string;
+};
 
 export class TypeError extends Error {
   static sep = '\n       ';
@@ -48,30 +52,35 @@ export type filler          = (input: any, source: any) => any;
 
 const makeConstructor = (name: string) => {
   if (!/^[a-z$_][a-z0-9$_]*$/i.test(name)) throw new Error('Bad name');
-  return eval
+  const Type = eval
   ( [ '(function ' + name + '() {'
     , '  if (this instanceof ' + name + ') return this;'
     , '  return ' + name + '.of.apply(' + name + ', arguments);'
     , '})'
     ].join('\n')
   );
+  tagCQESType(Type);
+  return Type;
 }
 
 const makeCollectionConstructor = (name: string, collection: Function) => {
   if (!/^[a-z$_][a-z0-9$_]*$/i.test(name)) throw new Error('Bad name');
-  return eval
+  const Type = eval
   ( [ '(function (Collection) {'
     , '  return class ' + name + ' extends Collection {};'
     , '})'
     ].join('\n')
   )(collection);
+  tagCQESType(Type);
+  return Type;
 };
 
 const getFirstValue = (source: { [name: string]: any }, keys: Array<string>) => {
   if (source == null) return null;
   for (const key of keys) {
-    if (key in source)
-      return source[key];
+    const value = getInObject(source, key);
+    if (value !== undefined)
+      return value;
   }
   return null;
 };
@@ -120,7 +129,7 @@ export interface IAny<A = any> {
   defineProperty(name: string, value: any, isGetter?: boolean): void;
 
   extends<T>(this: T, name: string):                                     T;
-  locate<T>(this: T, filepath: string):                                  T;
+  locate<T>(this: T, filepath: string, name?: string):                   T;
   clone<T>(this: T, fn?: (type: T) => void):                             T;
   of<T>(this: T, ...a: any[]):                                           T;
   setProperty<T>(this: T, name: string, value: any, isGetter?: boolean): T;
@@ -772,7 +781,7 @@ export const Array = (<IArray>Collection.extends('Array'))
     }
     return array;
   })
-  .addParser(function parseArray(data: any, warn?: warn) {
+  .addParser(function parseString(data: any, warn?: warn) {
     if (typeof data !== 'string') return ;
     const array = new this._constructor();
     const subtype = getType(this._subtype, warn);
@@ -940,7 +949,7 @@ export interface IRecord<R = {}> extends IAny<R> {
   mayEmpty:     this;
   keepNull:     this;
   compare(from: R & { [name: string]: any }, to: R & { [name: string]: any }): number;
-  add<T>(this: T, field: string, type: any, virtual?: filler | Array<string>): T;
+  add<T>(this: T, field: string, type: Typer, virtual?: filler | Array<string>): T;
   remove<T>(this: T, field: string): T;
   postfill<T>(this: T, field: string, filler: filler, enumerable?: boolean): T;
 }
@@ -1054,7 +1063,6 @@ export interface IObject extends Exclude<IRecord<{ _: string }>, 'mayEmpty'> {}
 
 export const Object = (<IObject>Record.extends('Object'))
   .unsetProperty('mayEmpty')
-  .setProperty('_collapse', false)
   .keepNull
   .addPostRewriter(function (data: any) {
     const output = new this();
@@ -1073,7 +1081,6 @@ export const Object = (<IObject>Record.extends('Object'))
 export interface IEntity extends IRecord<{ _id?: any }> {}
 
 export const Entity = (<IEntity>Record.extends('Entity'))
-  .setProperty('_collapse', false)
   .setProperty('_constructor', function () {
     const constructor = makeCollectionConstructor(this.name, _Object);
     return function (...args: any[]) {
@@ -1092,11 +1099,10 @@ export const Entity = (<IEntity>Record.extends('Entity'))
     return data;
   });
 
-
+// AggregateRoot
 export interface IAggregateRoot extends IEntity {}
 
 export const AggregateRoot = (<IAggregateRoot>Entity.extends('AggregateRoot'))
-  .setProperty('_collapse', false)
 ;
 
 // ------------------------------------------
