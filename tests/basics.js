@@ -205,8 +205,21 @@ describe('Array', function () {
       const value = NewName.from([{ toto: '42' }]);
       assert.deepEqual(isType(value.constructor), true);
     });
+    const ArrayOfSmth = Array(Record.add('value', String, ['some.where']))
+      .locate(__filename, 'ArrayOfSmth')
+    it('should keep Array typeName on discarded value', function () {
+      const result = ArrayOfSmth.from([{ some: { whereElse: '42' } }]);
+      assert.deepEqual(result.constructor.name, 'ArrayOfSmth');
+    });
+    it('should keep only valid items', function () {
+      const result = ArrayOfSmth.discardInvalid.from
+      ( [ { some: { where: '42' } }
+        , { some: { whereElse: '43' } }
+        , { some: { where: '44' } }
+        ]);
+      assert.deepEqual(result, [{ value: '42' }, { value: '44' }]);
+    });
   });
-
 });
 
 describe('Map', function () {

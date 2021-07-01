@@ -727,9 +727,11 @@ export const Set = (<ISet>Collection.extends('Set'))
 
 // Array
 export interface IArray<T = any> extends ICollection<Array<T>> {
-  _constructor: { new (): Array<T> };
-  _subtype:     ILazyAny;
+  _constructor:    { new (): Array<T> };
+  _subtype:        ILazyAny;
+  _discardInvalid: boolean;
   compare(from: Array<any>, to: Array<any>): number;
+  discardInvalid:  this;
 }
 
 export const Array = (<IArray>Collection.extends('Array'))
@@ -737,8 +739,9 @@ export const Array = (<IArray>Collection.extends('Array'))
     return makeCollectionConstructor(this.name, _Array);
   }, true)
   .setProperty('_subtype', null)
+  .setProperty('_discardInvalid', false)
   .setProperty('_default', function () {
-    return new _Array();
+    return new this._constructor();
   })
   .setProperty('of', function (type: any) {
     return this.clone((value: IArray) => value._subtype = type);
@@ -747,6 +750,9 @@ export const Array = (<IArray>Collection.extends('Array'))
     return this.addConstraint(function notEmpty(value: any) {
       return value.length > 0;
     });
+  }, true)
+  .setProperty('discardInvalid', function discardInvalid() {
+    return this.clone((value: IArray) => value._discardInvalid = true);
   }, true)
   .setProperty('compare', function compare(from: any, to: any) {
     const length = Math.max(from.length, to.length);
@@ -768,10 +774,14 @@ export const Array = (<IArray>Collection.extends('Array'))
     const array = new this._constructor();
     const subtype = getType(this._subtype, warn);
     for (let i = 0; i < data.length; i += 1) {
-      try { array[i] = subtype.from(data[i], warn); }
+      try { array.push(subtype.from(data[i], warn)); }
       catch (e) {
-        const strval = JSON.stringify(data[i]);
-        throw new TypeError('Failed on index: ' + i + ' = ' + strval, e);
+        if (this._discardInvalid) {
+          continue ;
+        } else {
+          const strval = JSON.stringify(data[i]);
+          throw new TypeError('Failed on index: ' + i + ' = ' + strval, e);
+        }
       }
     }
     return array;
@@ -809,7 +819,7 @@ export const Map = (<IMap>Collection.extends('Map'))
   .setProperty('_index', null)
   .setProperty('_subtype', null)
   .setProperty('_default', function () {
-    const map = new _Map();
+    const map = new this._constructor();
     _Object.defineProperty(map, 'toJSON', { value: this.toJSON });
     return map;
   })
