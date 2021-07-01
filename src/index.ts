@@ -23,12 +23,7 @@ export const _Set      = globalThis.Set;
 export const _Array    = globalThis.Array;
 export const _Map      = globalThis.Map;
 
-export interface Typer<T = any> {
-  new (...args: any[]): T;
-  from(data: any, warn?: warn): T;
-  name: string;
-  fqn?: string;
-};
+export type Typer<T = any> = { new (): T; } & typeof Any;
 
 export class TypeError extends Error {
   static sep = '\n       ';
@@ -941,14 +936,14 @@ export const Tuple = (<ITuple>Collection.extends('Tuple'))
 ;
 
 // Record
-export interface IRecord<R = {}> extends IAny<R> {
-  _constructor: { new (): R & { [name: string]: any } };
+export interface IRecord extends IAny<{}> {
+  _constructor: { new (): { [name: string]: any } };
   _members:     Map<string, { type: ILazyAny, postfill?: { filler: filler, enumerable: boolean } }>;
   _keepNull:    boolean;
   _collapse:    boolean;
   mayEmpty:     this;
   keepNull:     this;
-  compare(from: R & { [name: string]: any }, to: R & { [name: string]: any }): number;
+  compare(from: { [name: string]: any }, to: { [name: string]: any }): number;
   add<T>(this: T, field: string, type: Typer, virtual?: filler | Array<string>): T;
   remove<T>(this: T, field: string): T;
   postfill<T>(this: T, field: string, filler: filler, enumerable?: boolean): T;
@@ -1059,7 +1054,8 @@ export const Record = (<IRecord>Any.extends('Record'))
   });
 
 // Object
-export interface IObject extends Exclude<IRecord<{ _: string }>, 'mayEmpty'> {}
+type IObjectBase = IRecord & { _: string };
+export interface IObject extends Exclude<IObjectBase, 'mayEmpty'> {}
 
 export const Object = (<IObject>Record.extends('Object'))
   .unsetProperty('mayEmpty')
@@ -1078,7 +1074,8 @@ export const Object = (<IObject>Record.extends('Object'))
 
 
 // Entity
-export interface IEntity extends IRecord<{ _id?: any }> {}
+type IEntityBase = IRecord & { _id?: any };
+export interface IEntity extends IEntityBase {}
 
 export const Entity = (<IEntity>Record.extends('Entity'))
   .setProperty('_constructor', function () {
