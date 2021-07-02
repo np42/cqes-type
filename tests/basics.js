@@ -16,6 +16,11 @@ describe('Any', function () {
       assert.equal(Order.fqn, 'Context:Aggregate:Order');
     });
   });
+  describe('about cache', function () {
+    it('should has cache property defined', function () {
+      assert.deepEqual(Any._cache, new _Map());
+    })
+  });
 });
 
 describe('Boolean', function () {
@@ -169,20 +174,31 @@ describe('Set', function () {
     });
   });
 
+  it('should be serializable', function () {
+    const R = Set(String);
+    assert.deepEqual(JSON.stringify(R.from(['a', 'b', 'c', 'd'])), '["a","b","c","d"]');
+  });
 });
 
 describe('Set(Enum)', function () {
+  const SE = Set(Enum.of('A', 'B', 'C'));
 
   it('should accept all values', function () {
-    const SE = Set(Enum.of('A', 'B', 'C'));
     assert.deepEqual(SE.from(['A', 'B', 'C']), new _Set(['A', 'B', 'C']));
   });
 
   it('should reject if one value not declared in enum', function () {
-    const SE = Set(Enum.of('A', 'B', 'C'));
     try { SE.from(['A', 'C', 'D']); }
     catch (e) { return ; }
     throw new Error('Exception expected');
+  });
+
+  it('should parse string list separated by coma', function () {
+    assert.deepEqual(SE.from('A,C'), new _Set(['A', 'C']));
+  });
+
+  it('should be serializable', function () {
+    assert.deepEqual(JSON.stringify(SE.from('A,B')), '["A","B"]');
   });
 
 });

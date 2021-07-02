@@ -58,7 +58,7 @@ const makeConstructor = (name: string) => {
   return Type;
 }
 
-const makeCollectionConstructor = (name: string, collection: Function) => {
+const makeCollectionConstructor = (name: string, collection: Function, methods?: { [key: string]: any }) => {
   if (!/^[a-z$_][a-z0-9$_]*$/i.test(name)) throw new Error('Bad name');
   const Type = eval
   ( [ '(function (Collection) {'
@@ -181,6 +181,7 @@ Any.defineProperty = function defineProperty(name: string, value: any, isGetter?
   }
 };
 
+Any.defineProperty('_cache',         new _Map());
 Any.defineProperty('_preRewriters',  new _Array());
 Any.defineProperty('_postRewriters', new _Array());
 Any.defineProperty('_parsers',       new _Array());
@@ -659,7 +660,13 @@ export interface ISet extends ICollection<Set<any>> {
 
 export const Set = (<ISet>Collection.extends('Set'))
   .setProperty('_constructor', function () {
-    return makeCollectionConstructor(this.name, _Set);
+    const Set = makeCollectionConstructor(this.name, _Set);
+    const toJSON = this.toJSON;
+    return function (...args: any[]) {
+      const set = new Set(...args);
+      _Object.defineProperty(set, 'toJSON', { value: toJSON });
+      return set;
+    };
   }, true)
   .setProperty('_subtype', null)
   .setProperty('of', function (type: any) {
@@ -717,7 +724,19 @@ export const Set = (<ISet>Collection.extends('Set'))
     const subtype = getType(this._subtype, warn);
     for (const value of data)
       set.add(subtype.from(value, warn));
-    _Object.defineProperty(set, 'toJSON', { value: this.toJSON });
+    return set;
+  })
+  .addParser(function parseString(data: any, warn?: warn) {
+    if (typeof data !== 'string') return ;
+    const set = new this._constructor();
+    const subtype = getType(this._subtype, warn);
+    const insert = (entries: Array<string>) => {
+      entries.forEach(x => set.add(subtype.from(x, warn)));
+    };
+    if (/\r?\n/.test(data))    insert(data.split(/\r?\n/));
+    else if (/[,]/.test(data)) insert(data.split(/,\s*/));
+    else if (/[:]/.test(data)) insert(data.split(/:/));
+    else if (/\s/.test(data))  insert(data.split(/\s+/));
     return set;
   })
   .addConstraint(function isSet(data: any) {
